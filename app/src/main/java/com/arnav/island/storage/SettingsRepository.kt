@@ -1,7 +1,7 @@
 package com.arnav.island.storage
 
 import android.content.Context
-import android.util.Log
+import android.util.Base64
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.Preferences
@@ -11,9 +11,12 @@ import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
+import androidx.datastore.preferences.core.mutablePreferencesOf
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.arnav.island.animation.MotionPreset
 import com.arnav.island.events.NotificationPrivacy
+import com.arnav.island.util.Diagnostics
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -28,7 +31,10 @@ import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import org.json.JSONObject
+import java.io.ByteArrayOutputStream
 import java.io.IOException
+import java.util.zip.Deflater
+import java.util.zip.Inflater
 
 private val Context.settingsStore: DataStore<Preferences> by preferencesDataStore(name = "island_settings")
 
@@ -40,7 +46,7 @@ class SettingsRepository(private val context: Context, private val scope: Corout
     val flow: Flow<IslandSettings> = context.settingsStore.data
         .catch { e ->
             if (e is IOException) {
-                Log.w(TAG, "Settings read failed, using defaults", e)
+                Diagnostics.w(TAG, "Settings read failed, using defaults", e)
                 emit(emptyPreferences())
             } else {
                 throw e
@@ -78,6 +84,60 @@ class SettingsRepository(private val context: Context, private val scope: Corout
         val rules = s.appRules.toMutableMap()
         if (rule.isDefault) rules.remove(packageName) else rules[packageName] = rule
         s.copy(appRules = rules)
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // Share your setup
+    // ---------------------------------------------------------------------------------------------
+
+    /**
+     * A compact code with the user's taste (sizes, motion, theme, behaviour). Anything that
+     * describes this phone or this install (calibration, permissions-backed features, app rules,
+     * backups) stays out.
+     */
+    /** Every key a settings object writes, minus the personal ones. */
+    private val shareable: Set<String> by lazy {
+        val prefs = mutablePreferencesOf()
+        write(prefs, IslandSettings())
+        prefs.asMap().keys.map { it.name }.filter { it !in PERSONAL }.toSet()
+    }
+
+    suspend fun exportSetup(): String {
+        val prefs = mutablePreferencesOf()
+        write(prefs, current())
+        val json = JSONObject()
+        prefs.asMap().forEach { (key, value) ->
+            if (key.name in shareable) json.put(tag(value) + key.name, value)
+        }
+        return encode(json.toString())
+    }
+
+    /** Applies a code from [exportSetup]. Returns false when it is not a valid Island setup. */
+    suspend fun importSetup(code: String): Boolean {
+        val json = try {
+            JSONObject(decode(code.trim().substringAfterLast('/')))
+        } catch (e: Exception) {
+            Diagnostics.w(TAG, "Not an Island setup code", e)
+            return false
+        }
+        var applied = 0
+        context.settingsStore.edit { p ->
+            json.keys().forEach { tagged ->
+                val kind = tagged.substringBefore(':')
+                val name = tagged.substringAfter(':')
+                if (name !in shareable) return@forEach
+                when (kind) {
+                    "b" -> p[booleanPreferencesKey(name)] = json.getBoolean(tagged)
+                    "i" -> p[intPreferencesKey(name)] = json.getInt(tagged)
+                    "l" -> p[longPreferencesKey(name)] = json.getLong(tagged)
+                    "f" -> p[floatPreferencesKey(name)] = json.getDouble(tagged).toFloat()
+                    "s" -> p[stringPreferencesKey(name)] = json.getString(tagged)
+                    else -> return@forEach
+                }
+                applied++
+            }
+        }
+        return applied > 0
     }
 
     suspend fun resetCalibration() = update {
@@ -140,6 +200,22 @@ class SettingsRepository(private val context: Context, private val scope: Corout
         val statusBarIcons = stringPreferencesKey("status_bar_icons")
         val statusBarBackup = stringPreferencesKey("status_bar_backup")
         val lastSeenVersion = intPreferencesKey("last_seen_version")
+        val seamlessStatusBar = booleanPreferencesKey("seamless_status_bar")
+        val replaceSystemPopups = booleanPreferencesKey("replace_system_popups")
+        val headsUpBackup = intPreferencesKey("heads_up_backup")
+        val followSystemAnimationSpeed = booleanPreferencesKey("follow_system_animation_speed")
+        val unlockBloom = booleanPreferencesKey("unlock_bloom")
+        val calendarEnabled = booleanPreferencesKey("calendar_enabled")
+        val calendarLeadMinutes = intPreferencesKey("calendar_lead_min")
+        val torchEnabled = booleanPreferencesKey("torch_enabled")
+        val screenshotPreview = booleanPreferencesKey("screenshot_preview")
+        val liveUpdatesEnabled = booleanPreferencesKey("live_updates_enabled")
+        val chargeCoach = booleanPreferencesKey("charge_coach")
+        val chargeLimit = intPreferencesKey("charge_limit")
+        val customRimColor = intPreferencesKey("custom_rim_color")
+        val customGlowColor = intPreferencesKey("custom_glow_color")
+        val customHighlight = floatPreferencesKey("custom_highlight")
+        val customRimWidthDp = floatPreferencesKey("custom_rim_width_dp")
 
         val haptics = booleanPreferencesKey("haptics")
         val tapAction = stringPreferencesKey("tap_action")
@@ -253,6 +329,22 @@ class SettingsRepository(private val context: Context, private val scope: Corout
             statusBarIcons = p[K.statusBarIcons] ?: d.statusBarIcons,
             statusBarBackup = p[K.statusBarBackup] ?: d.statusBarBackup,
             lastSeenVersion = p[K.lastSeenVersion] ?: d.lastSeenVersion,
+            seamlessStatusBar = p[K.seamlessStatusBar] ?: d.seamlessStatusBar,
+            replaceSystemPopups = p[K.replaceSystemPopups] ?: d.replaceSystemPopups,
+            headsUpBackup = p[K.headsUpBackup] ?: d.headsUpBackup,
+            followSystemAnimationSpeed = p[K.followSystemAnimationSpeed] ?: d.followSystemAnimationSpeed,
+            unlockBloom = p[K.unlockBloom] ?: d.unlockBloom,
+            calendarEnabled = p[K.calendarEnabled] ?: d.calendarEnabled,
+            calendarLeadMinutes = p[K.calendarLeadMinutes] ?: d.calendarLeadMinutes,
+            torchEnabled = p[K.torchEnabled] ?: d.torchEnabled,
+            screenshotPreview = p[K.screenshotPreview] ?: d.screenshotPreview,
+            liveUpdatesEnabled = p[K.liveUpdatesEnabled] ?: d.liveUpdatesEnabled,
+            chargeCoach = p[K.chargeCoach] ?: d.chargeCoach,
+            chargeLimit = p[K.chargeLimit] ?: d.chargeLimit,
+            customRimColor = p[K.customRimColor] ?: d.customRimColor,
+            customGlowColor = p[K.customGlowColor] ?: d.customGlowColor,
+            customHighlight = p[K.customHighlight] ?: d.customHighlight,
+            customRimWidthDp = p[K.customRimWidthDp] ?: d.customRimWidthDp,
             haptics = p[K.haptics] ?: d.haptics,
             tapAction = p.enum(K.tapAction, d.tapAction),
             swipeToDismiss = p[K.swipeToDismiss] ?: d.swipeToDismiss,
@@ -349,6 +441,22 @@ class SettingsRepository(private val context: Context, private val scope: Corout
         p[K.statusBarIcons] = s.statusBarIcons
         p[K.statusBarBackup] = s.statusBarBackup
         p[K.lastSeenVersion] = s.lastSeenVersion
+        p[K.seamlessStatusBar] = s.seamlessStatusBar
+        p[K.replaceSystemPopups] = s.replaceSystemPopups
+        p[K.headsUpBackup] = s.headsUpBackup
+        p[K.followSystemAnimationSpeed] = s.followSystemAnimationSpeed
+        p[K.unlockBloom] = s.unlockBloom
+        p[K.calendarEnabled] = s.calendarEnabled
+        p[K.calendarLeadMinutes] = s.calendarLeadMinutes
+        p[K.torchEnabled] = s.torchEnabled
+        p[K.screenshotPreview] = s.screenshotPreview
+        p[K.liveUpdatesEnabled] = s.liveUpdatesEnabled
+        p[K.chargeCoach] = s.chargeCoach
+        p[K.chargeLimit] = s.chargeLimit
+        p[K.customRimColor] = s.customRimColor
+        p[K.customGlowColor] = s.customGlowColor
+        p[K.customHighlight] = s.customHighlight
+        p[K.customRimWidthDp] = s.customRimWidthDp
         p[K.haptics] = s.haptics
         p[K.tapAction] = s.tapAction.name
         p[K.swipeToDismiss] = s.swipeToDismiss
@@ -410,6 +518,48 @@ class SettingsRepository(private val context: Context, private val scope: Corout
     companion object {
         private const val TAG = "IslandSettings"
 
+        /** Keys that describe this phone, this install or need permissions; never shared. */
+        private val PERSONAL = setOf(
+            "enabled", "onboarding_done", "start_on_boot", "auto_detect_cutout", "manual_camera_x", "manual_camera_y",
+            "manual_camera_r", "offset_x", "offset_y", "camera_padding_dp", "status_bar_cleanup", "status_bar_icons",
+            "status_bar_backup", "last_seen_version", "replace_system_popups", "heads_up_backup", "app_rules_json",
+            "debug_hud", "local_api", "calendar_enabled", "screenshot_preview", "monitor_enabled",
+        )
+
+        private fun tag(value: Any): String = when (value) {
+            is Boolean -> "b:"
+            is Int -> "i:"
+            is Long -> "l:"
+            is Float -> "f:"
+            else -> "s:"
+        }
+
+        private fun encode(text: String): String {
+            val deflater = Deflater(Deflater.BEST_COMPRESSION, true)
+            deflater.setInput(text.toByteArray(Charsets.UTF_8))
+            deflater.finish()
+            val out = ByteArrayOutputStream()
+            val buffer = ByteArray(1024)
+            while (!deflater.finished()) out.write(buffer, 0, deflater.deflate(buffer))
+            deflater.end()
+            return Base64.encodeToString(out.toByteArray(), Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING)
+        }
+
+        private fun decode(code: String): String {
+            val bytes = Base64.decode(code, Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING)
+            val inflater = Inflater(true)
+            inflater.setInput(bytes)
+            val out = ByteArrayOutputStream()
+            val buffer = ByteArray(1024)
+            while (!inflater.finished()) {
+                val n = inflater.inflate(buffer)
+                if (n == 0 && (inflater.needsInput() || inflater.needsDictionary())) break
+                out.write(buffer, 0, n)
+            }
+            inflater.end()
+            return out.toString(Charsets.UTF_8.name())
+        }
+
         fun encodeRules(rules: Map<String, AppRule>): String {
             val root = JSONObject()
             rules.forEach { (pkg, r) ->
@@ -421,6 +571,7 @@ class SettingsRepository(private val context: Context, private val scope: Corout
                     put("t", r.showText)
                     r.privacy?.let { put("x", it.name) }
                     if (r.accent != 0) put("a", r.accent)
+                    r.motionPreset?.let { put("m", it.name) }
                 })
             }
             return root.toString()
@@ -439,11 +590,12 @@ class SettingsRepository(private val context: Context, private val scope: Corout
                         showText = o.optBoolean("t", true),
                         privacy = NotificationPrivacy.entries.firstOrNull { it.name == o.optString("x") },
                         accent = o.optInt("a", 0),
+                        motionPreset = MotionPreset.entries.firstOrNull { it.name == o.optString("m") },
                     ))
                 }
             }
         } catch (e: org.json.JSONException) {
-            Log.w(TAG, "Ignoring corrupt app rules", e)
+            Diagnostics.w(TAG, "Ignoring corrupt app rules", e)
             emptyMap()
         }
     }

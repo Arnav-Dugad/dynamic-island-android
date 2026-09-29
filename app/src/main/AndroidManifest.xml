@@ -31,8 +31,16 @@
     <uses-permission android:name="android.permission.DETECT_SCREEN_RECORDING" />
     <!-- Island haptics (vibration primitives) and the timer alert pattern. -->
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- Optional "next meeting" countdown; asked for only when the user turns it on. -->
+    <uses-permission android:name="android.permission.READ_CALENDAR" />
+    <!-- Optional screenshot preview; asked for only when the user turns it on. -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
     <!--
-        Experimental, optional status-bar cleanup. Can only be granted by the user over ADB
+        Optional status bar control (cleanup, seamless status bar) and pop-up replacement. Can only
+        be granted by the user over ADB
         (pm grant com.arnav.island android.permission.WRITE_SECURE_SETTINGS); never requested.
     -->
     <uses-permission
@@ -79,6 +87,13 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- A friend's shared setup: island://setup/<code> (from a QR code or a message). -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="island" android:host="setup" />
             </intent-filter>
         </activity>
 

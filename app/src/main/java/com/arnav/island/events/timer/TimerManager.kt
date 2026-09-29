@@ -4,7 +4,6 @@ import android.app.AlarmManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
-import android.util.Log
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
@@ -21,6 +20,7 @@ import com.arnav.island.events.StopwatchPayload
 import com.arnav.island.events.TimerPayload
 import com.arnav.island.island.render.presenters.TimerPresenter
 import com.arnav.island.storage.IslandSettings
+import com.arnav.island.util.Diagnostics
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -88,7 +88,7 @@ class TimerManager(
             val json = try {
                 context.timerStore.data.first()[key]
             } catch (e: Exception) {
-                Log.w(TAG, "Timer state unreadable", e)
+                Diagnostics.w(TAG, "Timer state unreadable", e)
                 null
             }
             _state.value = json?.let(::decode) ?: TimerState()
@@ -201,7 +201,7 @@ class TimerManager(
             try {
                 context.timerStore.edit { it[key] = encode(newState) }
             } catch (e: Exception) {
-                Log.w(TAG, "Could not persist timers", e)
+                Diagnostics.w(TAG, "Could not persist timers", e)
             }
         }
         sync()
@@ -371,7 +371,7 @@ class TimerManager(
             ),
         )
     } catch (e: org.json.JSONException) {
-        Log.w(TAG, "Discarding corrupt timer state", e)
+        Diagnostics.w(TAG, "Discarding corrupt timer state", e)
         null
     }
 

@@ -18,6 +18,7 @@ import com.arnav.island.events.ActionStyle
 import com.arnav.island.events.CallPayload
 import com.arnav.island.events.CallState
 import com.arnav.island.events.EntranceAnimation
+import com.arnav.island.events.EventColors
 import com.arnav.island.events.EventEngine
 import com.arnav.island.events.EventPriority
 import com.arnav.island.events.EventSource
@@ -26,7 +27,7 @@ import com.arnav.island.events.Glyph
 import com.arnav.island.events.ImageRef
 import com.arnav.island.events.IslandAction
 import com.arnav.island.events.IslandEvent
-import com.arnav.island.events.EventColors
+import com.arnav.island.events.LiveUpdatePayload
 import com.arnav.island.events.NavigationPayload
 import com.arnav.island.events.NotificationPayload
 import com.arnav.island.events.NotificationPrivacy
@@ -88,6 +89,7 @@ class NotificationProcessor(
         when {
             isCall(n) -> if (s.callsEnabled) handleCall(sbn)
             NavigationRegistry.providerFor(sbn) != null -> if (s.navigationEnabled && rule.notifications) handleNavigation(sbn)
+            isLiveUpdate(sbn) -> if (s.liveUpdatesEnabled && rule.notifications) handleLiveUpdate(sbn, s)
             hasProgress(n) -> if (s.progressEnabled && rule.notifications) handleProgress(sbn)
             !initialScan -> if (s.notificationsEnabled) handleAlert(sbn, ranking(rankingMap, sbn.key), s)
         }
@@ -97,6 +99,7 @@ class NotificationProcessor(
         val key = sbn.key
         engine.remove(callId(key))
         engine.remove(navId(key))
+        engine.remove(liveId(key))
         lastProgress.remove(key)?.let { last ->
             engine.remove(progressId(key))
             val finished = last >= 0.97f && reason != NotificationListenerService.REASON_CANCEL && reason != NotificationListenerService.REASON_USER_STOPPED
@@ -123,6 +126,18 @@ class NotificationProcessor(
         val ongoing = n.flags and (Notification.FLAG_ONGOING_EVENT or Notification.FLAG_FOREGROUND_SERVICE) != 0
         if (!ongoing) return false
         return n.extras.getInt(Notification.EXTRA_PROGRESS_MAX, 0) > 0 || n.extras.getBoolean(Notification.EXTRA_PROGRESS_INDETERMINATE)
+    }
+
+    /**
+     * Android 16 Live Updates (promoted ongoing or ProgressStyle notifications) from any app, and
+     * the ongoing tracking notifications of common delivery and ride apps.
+     */
+    private fun isLiveUpdate(sbn: StatusBarNotification): Boolean {
+        val n = sbn.notification
+        if (Build.VERSION.SDK_INT >= 36 && n.flags and Notification.FLAG_PROMOTED_ONGOING != 0) return true
+        if (template(n).endsWith("\$ProgressStyle")) return true
+        val ongoing = n.flags and (Notification.FLAG_ONGOING_EVENT or Notification.FLAG_FOREGROUND_SERVICE) != 0
+        return ongoing && (sbn.packageName in DELIVERY_APPS || sbn.packageName in RIDE_APPS)
     }
 
     private fun ranking(map: RankingMap?, key: String): Ranking? {
@@ -468,6 +483,111 @@ class NotificationProcessor(
         }
     }
 
+    private class Route(
+        val progress: Float?,
+        val points: List<Float>,
+        val segments: List<Pair<Float, Int>>,
+        val tracker: Icon?,
+    )
+
+    /** Progress, stops, segments and tracker icon from Notification.ProgressStyle (Android 16). */
+    private fun route(sbn: StatusBarNotification): Route {
+        val n = sbn.notification
+        if (Build.VERSION.SDK_INT >= 36) {
+            val style = try {
+                Notification.Builder.recoverBuilder(context, n).style as? Notification.ProgressStyle
+            } catch (e: RuntimeException) {
+                null
+            }
+            if (style != null) {
+                val max = style.progressMax.coerceAtLeast(1).toFloat()
+                return Route(
+                    progress = if (style.isProgressIndeterminate) null else (style.progress / max).coerceIn(0f, 1f),
+                    points = style.progressPoints.map { (it.position / max).coerceIn(0f, 1f) },
+                    segments = style.progressSegments.map { it.length.toFloat() to it.color },
+                    tracker = style.progressTrackerIcon,
+                )
+            }
+        }
+        val max = n.extras.getInt(Notification.EXTRA_PROGRESS_MAX, 0)
+        val progress = if (max > 0) (n.extras.getInt(Notification.EXTRA_PROGRESS, 0).toFloat() / max).coerceIn(0f, 1f) else null
+        return Route(progress, emptyList(), emptyList(), null)
+    }
+
+    /** The app's own chip text on Android 16, else an ETA found in the title or text. */
+    private fun shortStatus(n: Notification, title: String, text: String): String? {
+        if (Build.VERSION.SDK_INT >= 36) n.shortCriticalText?.toString()?.takeIf { it.isNotBlank() }?.let { return it }
+        for (source in listOf(title, text)) {
+            ETA_MINUTES.find(source)?.let { m ->
+                val range = m.groupValues[2].takeIf { it.isNotEmpty() }
+                return if (range != null) "${m.groupValues[1]}–$range min" else "${m.groupValues[1]} min"
+            }
+            ETA_TIME.find(source)?.let { return it.groupValues[1].trim() }
+        }
+        return null
+    }
+
+    private fun handleLiveUpdate(sbn: StatusBarNotification, s: IslandSettings) {
+        val n = sbn.notification
+        val extras = n.extras
+        val pkg = sbn.packageName
+        val key = sbn.key
+        val rule = s.ruleFor(pkg)
+        val showText = (rule.privacy ?: s.notificationPrivacy) == NotificationPrivacy.FULL && rule.showText
+        val rawTitle = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty()
+        val rawText = (extras.getCharSequence(Notification.EXTRA_BIG_TEXT) ?: extras.getCharSequence(Notification.EXTRA_TEXT))?.toString().orEmpty()
+        val appLabel = apps.label(pkg)
+        val short = shortStatus(n, rawTitle, rawText)
+        val route = route(sbn)
+        val open = IslandAction("live.open", "Open") { Launch.send(context, n.contentIntent) || Launch.openApp(context, pkg) }
+        scope.launch {
+            val (appRef, trackerRef) = withContext(Dispatchers.Default) {
+                val tracker = route.tracker?.let { icon ->
+                    try {
+                        icon.loadDrawable(context)?.let { images.put("tracker:$key", Bitmaps.fromDrawable(it, AVATAR_PX)) }
+                    } catch (e: Exception) {
+                        null
+                    }
+                }
+                loadAppIcon(pkg) to tracker
+            }
+            val accent = rule.accent.takeIf { it != 0 }
+                ?: n.color.takeIf { it != 0 && it != Notification.COLOR_DEFAULT }
+                ?: withContext(Dispatchers.Default) { apps.accentBlocking(pkg) }
+            val title = if (showText) rawTitle.ifBlank { appLabel } else appLabel
+            val text = if (showText) rawText else ""
+            engine.post(
+                IslandEvent(
+                    id = liveId(key),
+                    source = EventSource.PROGRESS,
+                    type = EventType.LIVE_UPDATE,
+                    timestamp = System.currentTimeMillis(),
+                    persistent = true,
+                    title = title,
+                    subtitle = short ?: text,
+                    icon = if (pkg in RIDE_APPS) Glyph.CAR else Glyph.SCOOTER,
+                    iconImage = appRef,
+                    artwork = trackerRef,
+                    colors = EventColors(accent = accent),
+                    tapAction = open,
+                    contentKey = "live",
+                    payload = LiveUpdatePayload(
+                        appLabel = appLabel,
+                        packageName = pkg,
+                        title = title,
+                        text = text,
+                        shortText = short,
+                        progress = route.progress,
+                        points = route.points,
+                        segments = route.segments,
+                        hasTrackerIcon = trackerRef != null,
+                        vehicle = if (pkg in RIDE_APPS) Glyph.CAR else Glyph.SCOOTER,
+                    ),
+                )
+            )
+        }
+    }
+
     private fun handleProgress(sbn: StatusBarNotification) {
         val n = sbn.notification
         val extras = n.extras
@@ -558,12 +678,26 @@ class NotificationProcessor(
     private fun alertId(key: String) = "notif:$key"
     private fun callId(key: String) = "call:$key"
     private fun navId(key: String) = "nav:$key"
+    private fun liveId(key: String) = "live:$key"
     private fun progressId(key: String) = "progress:$key"
 
     companion object {
         private const val ICON_PX = 144
         private const val AVATAR_PX = 96
         private const val MAX_SENDERS = 3
+
+        private val DELIVERY_APPS = setOf(
+            "in.swiggy.android", "com.application.zomato", "com.ubercab.eats", "com.grofers.customerapp",
+            "com.zeptoconsumerapp", "com.bigbasket.mobileapp", "com.dunzo.user", "in.amazon.mShop.android.shopping",
+            "com.flipkart.android", "com.dominos", "com.deliveroo.orderapp", "com.dd.doordash", "com.grubhub.android",
+            "com.instacart.client", "com.global.foodpanda.android", "com.talabat",
+        )
+        private val RIDE_APPS = setOf(
+            "com.ubercab", "com.olacabs.customer", "com.rapido.passenger", "me.lyft.android", "ee.mtakso.client",
+            "com.grabtaxi.passenger", "com.bolt.client",
+        )
+        private val ETA_MINUTES = Regex("""(\d{1,3})\s*(?:(?:-|–|to)\s*(\d{1,3}))?\s*(?:min|mins|minutes)\b""", RegexOption.IGNORE_CASE)
+        private val ETA_TIME = Regex("""(?:arriv\w*|reach\w*|deliver\w*|by|at|ETA)\s*(?:by|at|in)?\s*(\d{1,2}:\d{2}\s*(?:am|pm)?)""", RegexOption.IGNORE_CASE)
 
         // Notification.CALL_TYPE_* (API 31).
         private const val CALL_TYPE_INCOMING = 1

@@ -82,6 +82,13 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.arnav.island.IslandApp
+import com.arnav.island.events.ConfirmPayload
+import com.arnav.island.events.EntranceAnimation
+import com.arnav.island.events.EventColors
+import com.arnav.island.events.EventSource
+import com.arnav.island.events.EventType
+import com.arnav.island.events.ImageRef
+import com.arnav.island.events.IslandEvent
 import com.arnav.island.util.ColorExtractor
 import com.arnav.island.util.Launch
 import kotlinx.coroutines.launch
@@ -170,7 +177,30 @@ class ReplyActivity : ComponentActivity() {
         val fillIn = Intent().addFlags(Intent.FLAG_RECEIVER_FOREGROUND)
         RemoteInput.addResultsToIntent(arrayOf(input), fillIn, Bundle().apply { putCharSequence(input.resultKey, text) })
         RemoteInput.setResultsSource(fillIn, RemoteInput.SOURCE_FREE_FORM_INPUT)
-        return Launch.send(this, request.action.actionIntent, fillIn)
+        val sent = Launch.send(this, request.action.actionIntent, fillIn)
+        if (sent) confirm(request)
+        return sent
+    }
+
+    /** The sheet folds back into the island, which shows the reply going out and then a check. */
+    private fun confirm(request: ReplyRequest) {
+        val graph = (application as IslandApp).graph
+        val iconKey = "app:${request.packageName}@96"
+        graph.events.post(
+            IslandEvent(
+                id = "confirm:reply",
+                source = EventSource.NOTIFICATION,
+                type = EventType.CONFIRM,
+                timestamp = System.currentTimeMillis(),
+                persistent = false,
+                durationMs = 2_200,
+                title = "Reply sent",
+                iconImage = if (graph.images.contains(iconKey)) ImageRef(iconKey) else null,
+                colors = EventColors(accent = request.accent),
+                animation = EntranceAnimation.POP,
+                payload = ConfirmPayload("Sent", "Reply to ${request.title}"),
+            )
+        )
     }
 
     private fun close(request: ReplyRequest) {

@@ -84,6 +84,28 @@ class MediaSessionMonitor(
 
     private inner class Tracked(val controller: MediaController) : MediaController.Callback() {
         var lastPlayingAt = 0L
+        private var lineTitle: String? = null
+        private var lastLine: String? = null
+        private var lineChanges = 0
+
+        /**
+         * Some players publish a line that changes while the track plays (synced lyrics, radio
+         * text). A line only counts once it has changed during the same track, so ordinary static
+         * subtitles never show up as "live".
+         */
+        fun liveLine(title: String, line: String?): String? {
+            if (title != lineTitle) {
+                lineTitle = title
+                lastLine = line
+                lineChanges = 0
+                return null
+            }
+            if (line != lastLine) {
+                lastLine = line
+                if (line != null) lineChanges++
+            }
+            return if (lineChanges > 0) line else null
+        }
 
         override fun onPlaybackStateChanged(state: PlaybackState?) {
             if (state.isPlayingish()) lastPlayingAt = System.currentTimeMillis()
@@ -202,6 +224,9 @@ class MediaSessionMonitor(
             ?: metadata.text(MediaMetadata.METADATA_KEY_ALBUM_ARTIST)
             ?: metadata.text(MediaMetadata.METADATA_KEY_DISPLAY_SUBTITLE).orEmpty()
         val album = metadata.text(MediaMetadata.METADATA_KEY_ALBUM).orEmpty()
+        val candidate = (metadata.text(MediaMetadata.METADATA_KEY_DISPLAY_DESCRIPTION) ?: metadata.text(MediaMetadata.METADATA_KEY_DISPLAY_SUBTITLE))
+            ?.takeIf { it != artist && it != album && it != title }
+        val liveLine = t.liveLine(title, candidate)
         val duration = metadata.getLong(MediaMetadata.METADATA_KEY_DURATION).coerceAtLeast(0)
         val playing = state.isPlayingish()
         val actions = state?.actions ?: 0L
@@ -252,7 +277,7 @@ class MediaSessionMonitor(
                 artwork = artRef,
                 actions = eventActions + listOfNotNull(upNextAction),
                 colors = EventColors(accent = accent),
-                contentKey = "$pkg|$title|$artist",
+                contentKey = "$pkg|$title|$artist|${liveLine.orEmpty()}",
                 tapAction = open,
                 payload = MediaPayload(
                     packageName = pkg,
@@ -276,6 +301,7 @@ class MediaSessionMonitor(
                     setVolume = volume?.second,
                     outputName = output.first,
                     outputKind = output.second,
+                    liveLine = liveLine,
                 ),
             )
         )

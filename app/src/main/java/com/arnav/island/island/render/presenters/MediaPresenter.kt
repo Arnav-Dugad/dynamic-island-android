@@ -21,6 +21,8 @@ import com.arnav.island.island.render.RollingText
 import com.arnav.island.island.render.RoundedImage
 import com.arnav.island.util.ColorExtractor
 import com.arnav.island.util.Formatters
+import kotlin.math.cos
+import kotlin.math.sin
 
 class MediaPresenter(rc: RenderContext) : Presenter(rc) {
 
@@ -40,6 +42,7 @@ class MediaPresenter(rc: RenderContext) : Presenter(rc) {
     private val volumeGrow = Spring(0f, SpringSpec(0.25f, 0.8f), restThreshold = 0.002f)
     private val elapsedText = RollingText()
     private val remainingText = RollingText()
+    private val liveText = RollingText()
     private var volumeDrag: Float? = null
 
     // Expanded layout (px), computed in onBind.
@@ -65,7 +68,7 @@ class MediaPresenter(rc: RenderContext) : Presenter(rc) {
     override fun measure(event: IslandEvent, mode: PresentMode): Pair<Float, Float> {
         if (mode != PresentMode.EXPANDED) return super.measure(event, mode)
         val p = event.payload as? MediaPayload
-        var h = bandInset + dp(164f)
+        var h = bandInset + dp(164f) + if (p?.liveLine != null) dp(20f) else 0f
         if (p?.volume != null && p.setVolume != null) h += dp(34f)
         if (p?.outputName != null || p?.upNextTitle != null) h += dp(44f)
         return expandedWidth to h
@@ -99,7 +102,7 @@ class MediaPresenter(rc: RenderContext) : Presenter(rc) {
         textX = pad + artSize + dp(14f)
         waveCx = w - pad - dp(13f)
         textRight = waveCx - dp(13f) - dp(12f)
-        barY = top + artSize + dp(22f)
+        barY = top + artSize + dp(22f) + if (payload?.liveLine != null) dp(20f) else 0f
         controlsY = barY + dp(50f)
         volumeY = controlsY + dp(44f)
         chipsY = (if (hasVolume) volumeY else controlsY) + dp(if (hasVolume) 38f else 46f)
@@ -145,6 +148,7 @@ class MediaPresenter(rc: RenderContext) : Presenter(rc) {
         if (volumeGrow.step(dt)) moving = true
         if (elapsedText.step(dt)) moving = true
         if (remainingText.step(dt)) moving = true
+        if (liveText.step(dt)) moving = true
         return moving
     }
 
@@ -237,7 +241,38 @@ class MediaPresenter(rc: RenderContext) : Presenter(rc) {
                 return
             }
         }
-        drawWave(canvas, cx, cy, s * 0.92f, s * 0.7f, 4, a)
+        drawWaveMorph(canvas, cx, cy, s, a)
+    }
+
+    /**
+     * Playing: the equalizer. Paused: the bars flow round into a progress ring showing where the
+     * track stopped, and back into bars when it plays again.
+     */
+    private fun drawWaveMorph(canvas: Canvas, cx: Float, cy: Float, s: Float, alpha: Float) {
+        val m = (1f - amp.value).coerceIn(0f, 1f)
+        val p = payload
+        val canRing = p != null && p.durationMs > 0 && !rc.settings.minimalContent
+        if (!canRing || m < 0.002f) {
+            drawWave(canvas, cx, cy, s * 0.92f, s * 0.7f, 4, alpha)
+            return
+        }
+        val bars = 4
+        val ringR = s / 2f - dp(1.5f)
+        val unit = s * 0.92f / (bars * 2 - 1)
+        for (i in 0 until bars) {
+            // Each bar travels from its place in the row to a point on the ring, shrinking to a dot.
+            val lineX = cx - s * 0.46f + i * unit * 2f + unit / 2f
+            val angle = Math.toRadians((-90.0 + i * 90.0)).toFloat()
+            val ringX = cx + ringR * cos(angle)
+            val ringY = cy + ringR * sin(angle)
+            val x = lerp(lineX, ringX, m)
+            val y = lerp(cy, ringY, m)
+            val v = if (rc.settings.waveform) organic(rc.animTime, seed + i * 1.37f) else 0.6f
+            val hh = lerp(lerp(unit, s * 0.7f, (0.16f + 0.84f * v) * amp.value), unit, m).coerceAtLeast(unit)
+            rc.roundRect(canvas, x - unit / 2f, y - hh / 2f, x + unit / 2f, y + hh / 2f, unit / 2f, accent, alpha * (1f - m * m))
+        }
+        val frac = (p!!.positionAt(nowElapsed).toFloat() / p.durationMs).coerceIn(0f, 1f)
+        rc.glyphs.drawRing(canvas, cx, cy, ringR, dp(2.4f), frac * m, accent, IslandColors.TRACK, alpha * m)
     }
 
     private fun drawBubble(canvas: Canvas, d: Float, alpha: Float) {
@@ -257,6 +292,12 @@ class MediaPresenter(rc: RenderContext) : Presenter(rc) {
         rc.bodyPaint.textSize = rc.sp(14f)
         rc.text(canvas, titleLine, textX, top + dp(25f), rc.titlePaint, IslandColors.TEXT, alpha)
         rc.text(canvas, artistLine, textX, top + dp(46f), rc.bodyPaint, IslandColors.TEXT_SECONDARY, alpha)
+        payload?.liveLine?.let { line ->
+            // Live text from the player (synced lyrics, radio text) rolls in line by line.
+            rc.bodyPaint.textSize = rc.sp(14f)
+            liveText.set(rc.ellipsize(line, rc.bodyPaint, w - 2 * pad), direction = 1, animate = true)
+            liveText.draw(canvas, rc, pad, top + artSize + dp(22f), rc.bodyPaint, accent, alpha, Paint.Align.LEFT)
+        }
         drawWave(canvas, waveCx, top + artSize / 2f, dp(26f), dp(22f), 5, alpha)
 
         // Progress with rolling times.

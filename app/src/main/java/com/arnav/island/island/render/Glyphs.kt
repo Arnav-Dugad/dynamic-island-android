@@ -200,6 +200,45 @@ class GlyphPainter {
         Glyph.REPLY -> listOf(svg("M10 9V5l-7 7 7 7v-4.1c5 0 8.5 1.6 11 5.1-1-5-4-10-11-11z"))
         Glyph.CALENDAR -> listOf(svg("M19 4h-1V2h-2v2H8V2H6v2H5c-1.11 0-1.99.9-1.99 2L3 20c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 16H5V10h14v10zm0-12H5V6h14v2z"))
         Glyph.ALARM -> listOf(svg("M22 5.72l-4.6-3.86-1.29 1.53 4.6 3.86L22 5.72zM7.88 3.39L6.6 1.86 2 5.71l1.29 1.53 4.59-3.85zM12.5 8H11v6l4.75 2.85.75-1.23-4-2.37V8zM12 4c-4.97 0-9 4.03-9 9s4.02 9 9 9c4.97 0 9-4.03 9-9s-4.03-9-9-9zm0 16c-3.87 0-7-3.13-7-7s3.13-7 7-7 7 3.13 7 7-3.13 7-7 7z"))
+        Glyph.SHARE -> listOf(svg("M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92 1.61 0 2.92-1.31 2.92-2.92s-1.31-2.92-2.92-2.92z"))
+        Glyph.EDIT -> listOf(svg("M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"))
+        Glyph.FLASHLIGHT -> listOf(
+            // Head, then a tapered body with the switch.
+            Part(Path().apply {
+                addRoundRect(RectF(6.5f, 2f, 17.5f, 5.2f), 1.2f, 1.2f, Path.Direction.CW)
+                moveTo(6.5f, 6.4f); lineTo(17.5f, 6.4f); lineTo(15f, 11f); lineTo(15f, 21f)
+                quadTo(15f, 22f, 14f, 22f); lineTo(10f, 22f); quadTo(9f, 22f, 9f, 21f); lineTo(9f, 11f); close()
+            }, stroke = false),
+            Part(Path().apply { addCircle(12f, 14.6f, 1.35f, Path.Direction.CW) }, stroke = false),
+        )
+        Glyph.LEAF -> listOf(
+            Part(Path().apply {
+                moveTo(19.5f, 4.5f)
+                cubicTo(12f, 4.2f, 5.5f, 6.5f, 5.2f, 13.2f)
+                cubicTo(5.1f, 15.4f, 6f, 17.2f, 7.4f, 18.4f)
+                cubicTo(13.8f, 18.8f, 19.8f, 13.8f, 19.5f, 4.5f)
+                close()
+            }, stroke = false),
+            Part(Path().apply { moveTo(4.4f, 20.6f); quadTo(9f, 13.8f, 15.2f, 9.2f) }, stroke = true, strokeWidth = 1.6f),
+        )
+        Glyph.SCREENSHOT -> listOf(
+            Part(Path().apply {
+                addRoundRect(RectF(6f, 2f, 18f, 22f), 2.4f, 2.4f, Path.Direction.CW)
+            }, stroke = true, strokeWidth = 1.8f),
+            Part(Path().apply {
+                moveTo(8.8f, 8.6f); lineTo(8.8f, 6f); lineTo(11.4f, 6f)
+                moveTo(15.2f, 15.4f); lineTo(15.2f, 18f); lineTo(12.6f, 18f)
+            }, stroke = true, strokeWidth = 1.7f),
+        )
+        Glyph.SCOOTER -> listOf(
+            Part(Path().apply {
+                addCircle(6.2f, 17f, 2.6f, Path.Direction.CW)
+                addCircle(18f, 17f, 2.6f, Path.Direction.CW)
+                moveTo(6.2f, 17f); lineTo(9.5f, 12.4f); lineTo(14.6f, 12.4f); lineTo(18f, 17f)
+                moveTo(14.6f, 12.4f); lineTo(13.2f, 6.2f); lineTo(15.8f, 6.2f)
+            }, stroke = true, strokeWidth = 1.9f),
+            Part(Path().apply { addRoundRect(RectF(3.2f, 8.6f, 9.4f, 12.2f), 1f, 1f, Path.Direction.CW) }, stroke = false),
+        )
         Glyph.PLAY, Glyph.PAUSE -> emptyList()
     }
 }

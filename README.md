@@ -19,7 +19,11 @@ interrupted mid-flight and keeps its velocity.
 
 *Screenshots are from an Android 16 emulator with a punch-hole cutout, running this code.*
 
-**New in 1.1**, on a real Galaxy S23+: group chats with quick reply, the charging graph and stack peek.
+**New in 1.2**, on a real Galaxy S23+: the status bar clears while a card is open, deliveries, meetings and the flashlight.
+
+<img src="docs/images/v1.2-on-device.png" width="720" alt="Seamless status bar, delivery, meeting and flashlight activities on a Galaxy S23+">
+
+**New in 1.1**: group chats with quick reply, the charging graph and stack peek.
 
 <img src="docs/images/v1.1-on-device.png" width="720" alt="Group chat with reply, reply sheet, charging graph and stack peek on a Galaxy S23+">
 
@@ -37,8 +41,8 @@ over the other and keeps your settings.
 
 | File | Install from | What works |
 |---|---|---|
-| `Island-Lite-vX.Y.Z.apk` | A browser, easiest for friends | Charging, battery, Bluetooth, timers & stopwatch, system events, Glance, local API |
-| `Island-vX.Y.Z.apk` | USB (`adb install -r`) | Everything, including music, calls, navigation, downloads and notifications |
+| `Island-Lite-vX.Y.Z.apk` | A browser, easiest for friends | Charging, battery, Bluetooth, timers & stopwatch, flashlight, calendar, system events, Glance, local API |
+| `Island-vX.Y.Z.apk` | USB (`adb install -r`) | Everything, including music, calls, navigation, deliveries & rides, downloads and notifications |
 
 1. On your phone, open the link above and download the APK you want from **Assets**.
 2. Open the file. If asked, allow your browser or Files app to **install unknown apps**.
@@ -68,6 +72,7 @@ a step-by-step install guide.
 - [Features](#features)
 - [Build and install](#build-and-install)
 - [First run: permissions](#first-run-permissions)
+- [Blend with One UI](#blend-with-one-ui)
 - [Calibrating for the Galaxy S23+](#calibrating-for-the-galaxy-s23)
 - [Testing every event](#testing-every-event)
 - [Samsung battery optimisation](#samsung-battery-optimisation)
@@ -100,6 +105,10 @@ a step-by-step install guide.
   lens glint, blur-in text (Android 12+), tilt depth, haptic primitives and optional sound design.
 - Glance (long-press the empty island) and Stack peek (pull an open card further down to see
   every running activity).
+- Grab and flick (long-press an open card), waveform-to-ring morph, liquid split with surface
+  tension, stopwatch lap dial, unlock bloom, and a custom theme (rim, glow, highlight).
+- Blends into One UI: seamless status bar, optional pop-up replacement, motion that follows the
+  system animation speed, One UI styled settings (see [Blend with One UI](#blend-with-one-ui)).
 
 **Activities**
 | Source | What you get |
@@ -107,11 +116,15 @@ a step-by-step install guide.
 | Media | Any MediaSession player (Spotify, YouTube Music, Samsung Music, Apple Music, Poweramp, VLC…): artwork, artwork-tinted equalizer and glow, progress, seek, previous/play/pause/next, play↔pause morph, up next, output device, volume |
 | Notifications | Banners or compact pill, merged per conversation, stacked avatars for group chats, quick reply through the app's own reply action, actions, per-app accent colours, per-app rules, privacy levels |
 | Calls | Incoming (auto-expands) and ongoing calls; answer/decline/hang up when the dialer provides them |
-| Charging | Five themes (Minimal, Energy, Liquid, Pulse, One UI), counting percentage, time to full, temperature, live charging-power graph, "Paused at 85%" |
+| Charging | Five themes (Minimal, Energy, Liquid, Pulse, One UI), counting percentage, time to full, temperature, live charging-power graph, "Paused at 85%", optional charge limit coach |
 | Battery | Low battery, fully charged, Power saving on/off |
 | Bluetooth | Earbuds, headphones, speakers, watches, cars with an arrival animation and reported battery |
 | Timers & stopwatch | Local timers that survive process death and reboots, +1 min, laps, final ten-second countdown |
 | Navigation | Distance, instruction and maneuver icon from navigation notifications (pluggable providers) |
+| Deliveries & rides | Swiggy, Zomato, Uber, Blinkit, Zepto, Ola, Rapido… and any Android 16 Live Update: ETA in the pill, route with stops and a moving courier in the card |
+| Calendar | Optional countdown to your next event, with Join for Meet, Zoom and Teams links |
+| Flashlight | Torch state with a brightness slider using the flash's own strength steps |
+| Screenshots | Optional: the newest screenshot with Share and Edit |
 | Progress | Downloads and anything reporting progress, with a completion check animation |
 | System | Silent/vibrate/ring, Do Not Disturb, wired headset, rotation lock, hotspot*, screen recording (Android 15+), clipboard* |
 | Monitor | Opt-in RAM, network speed, CPU clock, temperature, island FPS |
@@ -121,8 +134,9 @@ a step-by-step install guide.
 
 **Settings app**: Material 3, dark/light/AMOLED, live preview on the home screen, onboarding,
 calibration, Island Studio (drag the real island's edges), Motion lab (spring curves), animated
-theme gallery, per-app rules and colours, What's new (plays each feature on the preview), share
-page with QR code, experimental status bar cleanup, developer test panel, debug HUD.
+theme gallery and custom theme, per-app rules, colours and motion, activity gallery, What's new
+timeline with replayable demos, share page with QR code and shareable setups, Blend with One UI,
+diagnostics report, developer test panel, debug HUD.
 
 ---
 
@@ -190,7 +204,9 @@ The onboarding walks through each one and explains why it is needed. Only the fi
 | Nearby devices | Bluetooth device name/type/battery | Only if Bluetooth events are on |
 | Usage access | Per-app rules and Game Mode (which app is in front) | Optional |
 | Alarms & reminders | Second-accurate timer completion in deep sleep | Optional |
-| Modify secure settings | Status bar cleanup only; granted over ADB, never requested in the app | Optional, experimental |
+| Modify secure settings | Blend with One UI and status bar cleanup; granted over ADB, never requested in the app | Optional |
+| Calendar | Next-meeting countdown | Optional, asked when turned on |
+| Photos | Screenshot preview | Optional, asked when turned on |
 
 Island never asks for contacts, SMS, location, microphone or camera, and has **no INTERNET permission**.
 
@@ -216,6 +232,36 @@ if you forget, `adb shell settings delete secure icon_blacklist` brings every ic
 > **"Restricted setting" / greyed-out toggle?** Android 13+ blocks notification access for apps
 > installed outside an app store until you allow it: *Settings → Apps → Island → ⋮ (top right) →
 > Allow restricted settings*, then grant access again. Onboarding has a shortcut.
+
+---
+
+## Blend with One UI
+
+*Island → Blend with One UI* makes the island behave like part of the phone. The status bar and
+pop-up options use Android's own secure settings, so they need the same one-time ADB grant as
+status bar cleanup:
+
+```bash
+adb shell pm grant com.arnav.island android.permission.WRITE_SECURE_SETTINGS
+```
+
+| Option | What it does | Default |
+|---|---|---|
+| Seamless status bar | Hides the clock and system icons while a banner or card covers them, and restores them as it closes. Camera, microphone and location indicators always stay. | On (once granted) |
+| Replace One UI pop-ups | Turns off `heads_up_notifications_enabled` while the island is visible, so notifications appear once. Restored whenever the island is hidden, the screen is locked or Island stops. | Off |
+| Match system animation speed | Scales island motion by the Developer options animation scale | On |
+| Unlock bloom | Accent-coloured ring around the camera on unlock | On |
+
+Island keeps a backup of every value it changes and restores it exactly when the option is turned
+off. **Before uninstalling Island, turn these off.** If you forget:
+
+```bash
+adb shell settings delete secure icon_blacklist
+adb shell settings put global heads_up_notifications_enabled 1
+```
+
+Samsung keeps the "Show notification icons" switch private, so the Blend screen links to
+*Settings → Notifications → Status bar* for you to turn it off yourself.
 
 ---
 
@@ -411,6 +457,9 @@ animating.
 - Private notifications are reduced to the app name while locked (and optionally always).
 - Quick replies go straight to the app's own reply action and are not kept anywhere.
 - Update checks and Obtainium open in your browser or Obtainium; Island itself never connects.
+- Calendar events and screenshots are read on demand (only with your permission) and never stored.
+- Shared setups contain taste only (sizes, motion, theme, behaviour), never calibration or app rules.
+- Diagnostics are built on the phone and only leave it if you copy or share them.
 
 ---
 

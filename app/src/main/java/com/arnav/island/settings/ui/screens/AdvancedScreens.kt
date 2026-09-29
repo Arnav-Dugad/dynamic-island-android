@@ -16,6 +16,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Reply
 import androidx.compose.material.icons.automirrored.rounded.ShowChart
 import androidx.compose.material.icons.rounded.Api
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.BatteryChargingFull
 import androidx.compose.material.icons.rounded.Bluetooth
 import androidx.compose.material.icons.rounded.BugReport
@@ -41,7 +42,6 @@ import androidx.compose.material.icons.rounded.Timer
 import androidx.compose.material.icons.rounded.Today
 import androidx.compose.material.icons.rounded.ViewAgenda
 import androidx.compose.material.icons.rounded.VisibilityOff
-import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
@@ -82,8 +82,8 @@ import com.arnav.island.settings.ui.rememberPermissions
 import com.arnav.island.settings.ui.theme.BadgeColors
 import com.arnav.island.settings.ui.theme.LocalIslandColors
 import com.arnav.island.storage.IslandSettings
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 @Composable
 fun AdvancedScreen(s: IslandSettings, ui: Ui) {
@@ -96,10 +96,12 @@ fun AdvancedScreen(s: IslandSettings, ui: Ui) {
             Group(title = "Developer") {
                 SwitchRow("Debug HUD", s.debugHud, { v -> ui.update { it.copy(debugHud = v) } }, "FPS, frame time, state, queue, window, camera and memory", Icons.Rounded.BugReport, BadgeColors.Graphite)
                 NavRow("Developer tools", "Fire test events on the real island", Icons.Rounded.Science, BadgeColors.Violet) { ui.go(Dest.DEVELOPER) }
+                NavRow("Diagnostics", "A local report to copy into a bug report", Icons.Rounded.BugReport, BadgeColors.Graphite) { ui.go(Dest.DIAGNOSTICS) }
             }
         }
         item {
             Group(title = "System UI") {
+                NavRow("Blend with One UI", "Seamless status bar and pop-up replacement", Icons.Rounded.Layers, BadgeColors.Blue) { ui.go(Dest.BLEND) }
                 NavRow("Status bar cleanup", "Experimental · hide icons the island already shows", Icons.Rounded.VisibilityOff, BadgeColors.Graphite) { ui.go(Dest.STATUS_BAR) }
             }
         }
@@ -225,6 +227,7 @@ fun DeveloperScreen(s: IslandSettings, ui: Ui) {
                 TestRow("Reply sheet", Icons.AutoMirrored.Rounded.Reply, BadgeColors.Blue) { ReplyRequest.launch(context, ReplyRequest.test(context)) }
             }
         }
+        item { NewTestRows(ui) }
         item {
             Group(title = "Control") {
                 TestRow("Expand", Icons.Rounded.OpenInFull, BadgeColors.Graphite) { ui.graph.commands.tryEmit(IslandCommand.Expand()) }

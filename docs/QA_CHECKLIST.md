@@ -111,3 +111,17 @@ font size. Tick each item; note the One UI version.
 - [ ] Onboarding skips notification access and explains Lite; Home shows the Lite card.
 - [ ] Charging, battery, Bluetooth, timers, system events and Glance all work.
 - [ ] Installing the full APK over Lite keeps every setting.
+
+## 15. New in 1.2
+- [ ] Updating opens the What's new timeline once; the preview stays on screen while scrolling; every play button animates it.
+- [ ] Blend: with WRITE_SECURE_SETTINGS granted, a banner or card hides the clock, battery and signal icons and they return after it closes; icon_blacklist ends exactly as before.
+- [ ] Replace One UI pop-ups: a real WhatsApp message shows only in the island; in a fullscreen video, on the lock screen and with Island stopped, One UI pop-ups are back.
+- [ ] Developer options → Animator duration scale 0.5x makes the island visibly faster; 1x restores it.
+- [ ] Unlock bloom plays once on unlock.
+- [ ] A real Swiggy / Zomato / Uber tracking notification shows the ETA pill and the route card.
+- [ ] Next meeting: with calendar access, an event 15 minutes away shows the countdown; Join opens a Meet link.
+- [ ] Quick settings flashlight: the island shows the torch; the slider changes brightness; Turn off works.
+- [ ] Screenshot preview (when enabled): Share and Edit open with the new image.
+- [ ] Charge coach: stays quiet when One UI pauses at 85%; nudges once when charging continues past the limit.
+- [ ] Grab and flick, waveform morph, liquid split, lap dial and "Reply sent" all play on the real island.
+- [ ] Custom theme, per-app motion, gallery pins, setup sharing (link opens Island and asks before applying) and diagnostics copy all work.

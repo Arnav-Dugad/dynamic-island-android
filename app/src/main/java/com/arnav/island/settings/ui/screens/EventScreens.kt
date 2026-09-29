@@ -1,6 +1,7 @@
 package com.arnav.island.settings.ui.screens
 
 import android.Manifest
+import android.content.pm.PackageManager
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -24,9 +25,13 @@ import androidx.compose.material.icons.rounded.BatteryFull
 import androidx.compose.material.icons.rounded.Bluetooth
 import androidx.compose.material.icons.rounded.Call
 import androidx.compose.material.icons.rounded.ContentPaste
+import androidx.compose.material.icons.rounded.DeliveryDining
 import androidx.compose.material.icons.rounded.DoNotDisturbOn
 import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.Eco
+import androidx.compose.material.icons.rounded.Event
 import androidx.compose.material.icons.rounded.FiberManualRecord
+import androidx.compose.material.icons.rounded.FlashlightOn
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Headphones
 import androidx.compose.material.icons.rounded.Lock
@@ -38,6 +43,7 @@ import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.PhonelinkLock
 import androidx.compose.material.icons.rounded.PlayCircle
 import androidx.compose.material.icons.rounded.ScreenRotation
+import androidx.compose.material.icons.rounded.Screenshot
 import androidx.compose.material.icons.rounded.Shield
 import androidx.compose.material.icons.rounded.Thermostat
 import androidx.compose.material.icons.rounded.Timelapse
@@ -61,6 +67,7 @@ import com.arnav.island.BuildConfig
 import com.arnav.island.events.ChargingTheme
 import com.arnav.island.events.EventPriority
 import com.arnav.island.events.NotificationPrivacy
+import com.arnav.island.events.system.ScreenshotMonitor
 import com.arnav.island.permissions.PermissionSnapshot
 import com.arnav.island.permissions.Permissions
 import com.arnav.island.settings.ui.Dest
@@ -85,6 +92,14 @@ import com.arnav.island.storage.NotificationStyle
 
 @Composable
 fun EventsScreen(s: IslandSettings, p: PermissionSnapshot, ui: Ui) {
+    val context = LocalContext.current
+    val calendarLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
+        if (ok) ui.update { it.copy(calendarEnabled = true) }
+    }
+    val photosLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
+        if (ok) ui.update { it.copy(screenshotPreview = true) }
+    }
+    fun granted(permission: String) = context.checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED
     SettingsPage("Events", onBack = ui::back) {
         item {
             Group(title = "Live activities") {
@@ -94,6 +109,16 @@ fun EventsScreen(s: IslandSettings, p: PermissionSnapshot, ui: Ui) {
                 SwitchRow("Stopwatch", s.stopwatchEnabled, { v -> ui.update { it.copy(stopwatchEnabled = v) } }, null, Icons.Rounded.Timelapse, BadgeColors.Orange)
                 SwitchRow("Navigation", s.navigationEnabled, { v -> ui.update { it.copy(navigationEnabled = v) } }, "Turn-by-turn from navigation apps", Icons.Rounded.Navigation, BadgeColors.Blue, enabled = p.notificationAccess)
                 SwitchRow("Downloads & progress", s.progressEnabled, { v -> ui.update { it.copy(progressEnabled = v) } }, "Any notification that reports progress", Icons.Rounded.Download, BadgeColors.Cyan, enabled = p.notificationAccess)
+                SwitchRow("Deliveries & rides", s.liveUpdatesEnabled, { v -> ui.update { it.copy(liveUpdatesEnabled = v) } },
+                    "Swiggy, Zomato, Uber, Blinkit, Zepto and more, plus any app using Android 16 Live Updates", Icons.Rounded.DeliveryDining, BadgeColors.Orange, enabled = p.notificationAccess)
+                SwitchRow("Flashlight", s.torchEnabled, { v -> ui.update { it.copy(torchEnabled = v) } }, "Brightness slider while the torch is on", Icons.Rounded.FlashlightOn, BadgeColors.Yellow)
+                SwitchRow("Next meeting", s.calendarEnabled, { v ->
+                    if (v && !granted(Manifest.permission.READ_CALENDAR)) calendarLauncher.launch(Manifest.permission.READ_CALENDAR)
+                    else ui.update { it.copy(calendarEnabled = v) }
+                }, "A countdown ${s.calendarLeadMinutes} min before events in your calendars. Asks for calendar access.", Icons.Rounded.Event, BadgeColors.Blue)
+                Reveal(s.calendarEnabled) {
+                    SliderRow("Show before", s.calendarLeadMinutes.toFloat(), 5f..60f, { v -> ui.update { it.copy(calendarLeadMinutes = v.toInt()) } }, { "${it.toInt()} min" }, steps = 10)
+                }
                 SwitchRow("Screen recording", s.screenRecordEnabled, { v -> ui.update { it.copy(screenRecordEnabled = v) } },
                     if (Build.VERSION.SDK_INT >= 35) "Red recording indicator" else "Requires Android 15", Icons.Rounded.FiberManualRecord, BadgeColors.Red, enabled = Build.VERSION.SDK_INT >= 35)
             }
@@ -110,6 +135,11 @@ fun EventsScreen(s: IslandSettings, p: PermissionSnapshot, ui: Ui) {
                 SwitchRow("Rotation lock", s.rotationEnabled, { v -> ui.update { it.copy(rotationEnabled = v) } }, null, Icons.Rounded.ScreenRotation, BadgeColors.Graphite)
                 SwitchRow("Hotspot", s.hotspotEnabled, { v -> ui.update { it.copy(hotspotEnabled = v) } }, "Best effort: only if your Android version broadcasts it", Icons.Rounded.WifiTethering, BadgeColors.Teal)
                 SwitchRow("Clipboard", s.clipboardEnabled, { v -> ui.update { it.copy(clipboardEnabled = v) } }, "Off by default. Android 10+ only reports copies while Island is open, and content is never read", Icons.Rounded.ContentPaste, BadgeColors.Graphite)
+                SwitchRow("Screenshot preview", s.screenshotPreview, { v ->
+                    val permission = ScreenshotMonitor.permission()
+                    if (v && !granted(permission)) photosLauncher.launch(permission)
+                    else ui.update { it.copy(screenshotPreview = v) }
+                }, "Off by default. Shows the newest screenshot with Share and Edit. Asks for photo access.", Icons.Rounded.Screenshot, BadgeColors.Graphite)
             }
         }
         item {
@@ -242,6 +272,14 @@ fun ChargingScreen(s: IslandSettings, ui: Ui) {
                 SwitchRow("Charging animation", s.chargingEnabled, { v -> ui.update { it.copy(chargingEnabled = v) } }, null, Icons.Rounded.BatteryChargingFull, BadgeColors.Green)
                 SwitchRow("Keep as live activity", s.chargingLiveActivity, { v -> ui.update { it.copy(chargingLiveActivity = v) } }, "Show the percentage in the island while plugged in", Icons.Rounded.BatteryFull, BadgeColors.Teal)
                 SwitchRow("Temperature in details", s.batteryShowTemperature, { v -> ui.update { it.copy(batteryShowTemperature = v) } }, null, Icons.Rounded.Thermostat, BadgeColors.Orange)
+            }
+        }
+        item {
+            Group(title = "Battery care", footer = "One nudge per charge, only while the phone is still charging past the limit. If One UI's own battery protection pauses charging, Island stays quiet and shows \"Paused at 85%\" instead.") {
+                SwitchRow("Charge limit coach", s.chargeCoach, { v -> ui.update { it.copy(chargeCoach = v) } }, "A gentle \"unplug now\" when charging passes your limit", Icons.Rounded.Eco, BadgeColors.Green)
+                Reveal(s.chargeCoach) {
+                    SliderRow("Limit", s.chargeLimit.toFloat(), 60f..95f, { v -> ui.update { it.copy(chargeLimit = v.toInt()) } }, { "${it.toInt()}%" }, steps = 6)
+                }
             }
         }
     }

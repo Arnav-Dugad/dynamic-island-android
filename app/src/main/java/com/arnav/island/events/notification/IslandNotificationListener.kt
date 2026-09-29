@@ -3,8 +3,8 @@ package com.arnav.island.events.notification
 import android.content.ComponentName
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
-import android.util.Log
 import com.arnav.island.IslandApp
+import com.arnav.island.util.Diagnostics
 
 /**
  * Notification access entry point. All logic lives in [NotificationProcessor]; this service only
@@ -21,7 +21,7 @@ class IslandNotificationListener : NotificationListenerService() {
         try {
             activeNotifications?.forEach { graph.notifications.onPosted(it, currentRanking, initialScan = true) }
         } catch (e: SecurityException) {
-            Log.w(TAG, "Could not read active notifications", e)
+            Diagnostics.w(TAG, "Could not read active notifications", e)
         }
     }
 

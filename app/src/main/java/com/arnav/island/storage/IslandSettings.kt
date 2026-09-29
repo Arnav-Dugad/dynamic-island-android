@@ -15,6 +15,7 @@ enum class IslandTheme(val label: String, val description: String) {
     MINIMAL("Minimal", "Quieter compact content, no decorative motion."),
     SAMSUNG("Samsung", "One UI accent colours from your wallpaper."),
     RGB("RGB Gaming", "Animated spectrum rim."),
+    CUSTOM("Custom", "Your own rim, glow and highlight."),
 }
 
 enum class AppThemeMode(val label: String) { SYSTEM("System"), DARK("Dark"), LIGHT("Light") }
@@ -54,6 +55,8 @@ data class AppRule(
     val privacy: NotificationPrivacy? = null,
     /** 0 = automatic (from the app icon), otherwise a fixed ARGB accent. */
     val accent: Int = 0,
+    /** Motion personality while this app is open; null follows the global preset. */
+    val motionPreset: MotionPreset? = null,
 ) {
     val isDefault: Boolean get() = this == AppRule()
 }
@@ -185,6 +188,33 @@ data class IslandSettings(
     val monitorTemperature: Boolean = true,
     val monitorFps: Boolean = false,
 
+    // Blend with One UI. Status bar and pop-up control need WRITE_SECURE_SETTINGS (granted over ADB).
+    /** Clock and system icons step aside while a card covers the status bar. */
+    val seamlessStatusBar: Boolean = true,
+    /** Island replaces One UI's heads-up pop-ups while it is visible. */
+    val replaceSystemPopups: Boolean = false,
+    /** Original heads_up_notifications_enabled value (-1: nothing saved). */
+    val headsUpBackup: Int = -1,
+    /** Scale motion with the system animation speed (Developer options). */
+    val followSystemAnimationSpeed: Boolean = true,
+    val unlockBloom: Boolean = true,
+
+    // More live activities
+    val calendarEnabled: Boolean = false,
+    val calendarLeadMinutes: Int = 15,
+    val torchEnabled: Boolean = true,
+    val screenshotPreview: Boolean = false,
+    /** Deliveries, rides and Android 16 Live Updates. */
+    val liveUpdatesEnabled: Boolean = true,
+    val chargeCoach: Boolean = false,
+    val chargeLimit: Int = 85,
+
+    // Custom island theme
+    val customRimColor: Int = 0xFF7CF7FF.toInt(),
+    val customGlowColor: Int = 0xFF7B4DFF.toInt(),
+    val customHighlight: Float = 0.5f,
+    val customRimWidthDp: Float = 1.2f,
+
     // Experimental status bar cleanup (needs WRITE_SECURE_SETTINGS granted over ADB)
     val statusBarCleanup: Boolean = false,
     val statusBarIcons: String = "alarm_clock,volume,zen,rotate",
@@ -212,9 +242,13 @@ data class IslandSettings(
         touchExtensionDp = touchExtensionDp,
     )
 
-    fun motionProfile(systemReduceMotion: Boolean) = MotionProfile.from(
-        preset = motionPreset,
-        speed = animationSpeed,
+    /**
+     * [systemSpeed] is the inverse of Android's animator duration scale (2x faster at 0.5x), and
+     * [preset] lets a per-app personality replace the global preset.
+     */
+    fun motionProfile(systemReduceMotion: Boolean, systemSpeed: Float = 1f, preset: MotionPreset? = null) = MotionProfile.from(
+        preset = preset ?: motionPreset,
+        speed = animationSpeed * (if (followSystemAnimationSpeed) systemSpeed else 1f),
         intensity = animationIntensity,
         customResponse = customResponse,
         customDamping = customDamping,

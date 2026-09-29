@@ -8,6 +8,7 @@ import com.arnav.island.events.test.TestEvents
 import com.arnav.island.events.timer.TimerManager
 import com.arnav.island.island.CutoutSource
 import com.arnav.island.overlay.StatusBarCleanup
+import com.arnav.island.overlay.SystemPopups
 import com.arnav.island.storage.IslandSettings
 import com.arnav.island.storage.SettingsRepository
 import com.arnav.island.util.AppInfoCache
@@ -17,6 +18,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 /** Live facts about the running overlay, for the settings UI and the debug HUD. */
@@ -70,11 +74,13 @@ class AppGraph(val app: Application) {
     val commands = MutableSharedFlow<IslandCommand>(extraBufferCapacity = 8)
 
     init {
-        // Status bar cleanup follows the setting whether or not the overlay is running.
+        // Status bar control and pop-up replacement follow the settings whether or not the
+        // overlay is running; pop-ups are only suppressed while the island is actually showing.
+        val showing = runtime.map { it.serviceRunning && it.hiddenReason == null }.distinctUntilChanged()
         scope.launch {
-            settings.flow.collect { s ->
-                val next = StatusBarCleanup.sync(app, s) ?: return@collect
-                settings.set { it.copy(statusBarBackup = next.statusBarBackup) }
+            combine(settings.flow, showing) { s, visible -> s to visible }.collect { (s, visible) ->
+                StatusBarCleanup.sync(app, s)?.let { next -> settings.set { it.copy(statusBarBackup = next.statusBarBackup) } }
+                SystemPopups.sync(app, s, visible)?.let { next -> settings.set { it.copy(headsUpBackup = next.headsUpBackup) } }
             }
         }
     }

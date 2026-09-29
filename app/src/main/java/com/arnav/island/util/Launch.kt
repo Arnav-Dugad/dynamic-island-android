@@ -6,7 +6,6 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
-import android.util.Log
 
 /**
  * Launch helpers that respect Android 14+ background-activity-launch rules. The island only
@@ -43,10 +42,10 @@ object Launch {
             pendingIntent.send(context, 0, fillIn, null, null, null, options())
             true
         } catch (e: PendingIntent.CanceledException) {
-            Log.w(TAG, "PendingIntent was cancelled", e)
+            Diagnostics.w(TAG, "PendingIntent was cancelled", e)
             false
         } catch (e: RuntimeException) {
-            Log.w(TAG, "PendingIntent send failed", e)
+            Diagnostics.w(TAG, "PendingIntent send failed", e)
             false
         }
     }
@@ -61,7 +60,7 @@ object Launch {
         context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         true
     } catch (e: RuntimeException) {
-        Log.w(TAG, "Could not start ${intent.component ?: intent.action}", e)
+        Diagnostics.w(TAG, "Could not start ${intent.component ?: intent.action}", e)
         false
     }
 }

@@ -7,6 +7,7 @@ import android.app.Service
 import android.content.ComponentCallbacks
 import android.content.Context
 import android.content.res.Configuration
+import android.database.ContentObserver
 import android.graphics.Rect
 import android.graphics.RectF
 import android.hardware.display.DisplayManager
@@ -26,13 +27,17 @@ import com.arnav.island.events.GlancePayload
 import com.arnav.island.events.Glyph
 import com.arnav.island.events.IslandEvent
 import com.arnav.island.events.MediaPayload
-import com.arnav.island.events.bluetooth.BluetoothMonitor
 import com.arnav.island.events.battery.BatteryMonitor
+import com.arnav.island.events.bluetooth.BluetoothMonitor
+import com.arnav.island.events.calendar.CalendarMonitor
 import com.arnav.island.events.system.ScreenRecordingMonitor
+import com.arnav.island.events.system.ScreenshotMonitor
 import com.arnav.island.events.system.SystemEventsMonitor
 import com.arnav.island.events.system.SystemStatsMonitor
+import com.arnav.island.events.system.TorchMonitor
 import com.arnav.island.island.IslandController
 import com.arnav.island.island.IslandState
+import com.arnav.island.island.render.CustomTheme
 import com.arnav.island.island.render.IslandColors
 import com.arnav.island.island.render.IslandHaptics
 import com.arnav.island.island.render.IslandSounds
@@ -88,6 +93,20 @@ class OverlayRuntime(private val service: Service, private val graph: AppGraph) 
     private val haptics = IslandHaptics(windowContext) { settings.haptics }
     private val sounds = IslandSounds(windowContext) { settings.soundEffects }
     private val tilt = TiltSensor(windowContext) { dx, dy -> view.scene.setTilt(dx, dy); view.requestFrame() }
+    private val torch = TorchMonitor(service, graph.events, settingsFn)
+    private val calendar = CalendarMonitor(service, graph.events, scope, settingsFn)
+    private val screenshots = ScreenshotMonitor(service, graph.events, graph.images, scope, settingsFn)
+
+    /** Android's animator duration scale (Developer options); motion follows it like system UI. */
+    private var systemAnimationScale = readAnimationScale()
+    private val animationScaleObserver = object : ContentObserver(null) {
+        override fun onChange(selfChange: Boolean) {
+            view.post {
+                systemAnimationScale = readAnimationScale()
+                applyRenderSettings()
+            }
+        }
+    }
 
     private var settings: IslandSettings = graph.settings.state.value
     private var hud: DebugHud? = null
@@ -141,6 +160,8 @@ class OverlayRuntime(private val service: Service, private val graph: AppGraph) 
         controller.onStateChanged = { t ->
             graph.runtime.update { it.copy(stateLabel = t.to.label) }
             updateTilt()
+            // Seamless status bar: clear it the moment a banner or card starts covering it.
+            if (coversStatusBar()) StatusBarCleanup.setCardOpen(service, true)
         }
         controller.glanceProvider = ::buildGlance
         controller.start()
@@ -152,6 +173,10 @@ class OverlayRuntime(private val service: Service, private val graph: AppGraph) 
         recording.start()
         if (settings.bluetoothEnabled && bluetooth.hasPermission()) bluetooth.start()
         graph.media.start()
+        if (settings.torchEnabled) torch.start()
+        calendar.start()
+        screenshots.start()
+        service.contentResolver.registerContentObserver(Settings.Global.getUriFor(Settings.Global.ANIMATOR_DURATION_SCALE), false, animationScaleObserver)
         windowContext.registerComponentCallbacks(configCallbacks)
 
         scope.launch { graph.settings.flow.collect(::onSettings) }
@@ -170,6 +195,24 @@ class OverlayRuntime(private val service: Service, private val graph: AppGraph) 
                 .collect { updateVisibility() }
         }
         scope.launch {
+            foreground.current.collect {
+                if (settings.appRules.values.any { r -> r.motionPreset != null }) applyRenderSettings()
+            }
+        }
+        scope.launch {
+            // Unlock bloom: the island greets you with a ring of the system accent.
+            var wasLocked = screen.state.value.locked
+            screen.state.collect { st ->
+                if (wasLocked && st.usable && settings.unlockBloom) {
+                    view.post {
+                        view.scene.unlockBloom()
+                        view.requestFrame()
+                    }
+                }
+                wasLocked = st.locked || !st.interactive
+            }
+        }
+        scope.launch {
             screen.state.collect { st ->
                 if (!st.interactive) view.pauseRendering()
                 if (st.usable) {
@@ -184,6 +227,11 @@ class OverlayRuntime(private val service: Service, private val graph: AppGraph) 
 
     fun stop() {
         windowContext.unregisterComponentCallbacks(configCallbacks)
+        service.contentResolver.unregisterContentObserver(animationScaleObserver)
+        StatusBarCleanup.setCardOpen(service, false)
+        torch.stop()
+        calendar.stop()
+        screenshots.stop()
         tilt.setActive(false)
         sounds.release()
         controller.stop()
@@ -218,6 +266,10 @@ class OverlayRuntime(private val service: Service, private val graph: AppGraph) 
         system.refresh()
         battery.refresh()
         graph.media.refresh()
+        if (s.torchEnabled) torch.start() else torch.stop()
+        torch.refresh()
+        calendar.start()
+        screenshots.start()
         graph.timers.resync()
         if (s.bluetoothEnabled && bluetooth.hasPermission()) bluetooth.start() else bluetooth.stop()
         if (s.debugHud) showHud() else hideHud()
@@ -225,6 +277,16 @@ class OverlayRuntime(private val service: Service, private val graph: AppGraph) 
         updateVisibility()
         updateTilt()
     }
+
+    /** True while a banner or card is heading below the visible status bar (pill toasts don't). */
+    private fun coversStatusBar(): Boolean {
+        val scene = view.scene
+        val card = scene.state is IslandState.Toast || scene.state.isLarge
+        return card && statusBarVisible.value && scene.target.bottom > rc.statusBarBottom + rc.dp(12f)
+    }
+
+    private fun readAnimationScale(): Float =
+        Settings.Global.getFloat(service.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f).takeIf { it > 0f } ?: 1f
 
     /** Tilt depth only listens while an open card is on screen and the screen is usable. */
     private fun updateTilt() {
@@ -260,7 +322,7 @@ class OverlayRuntime(private val service: Service, private val graph: AppGraph) 
         val usable = screen.state.value.usable
         val needsForeground = settings.gameMode ||
             settings.fullscreenMode == FullscreenMode.HIDE_IN_GAMES_VIDEOS ||
-            settings.appRules.values.any { it.visibility != AppVisibility.NORMAL }
+            settings.appRules.values.any { it.visibility != AppVisibility.NORMAL || it.motionPreset != null }
         foreground.setActive(usable && needsForeground)
         stats.setActive(usable && settings.monitorEnabled)
     }
@@ -298,9 +360,15 @@ class OverlayRuntime(private val service: Service, private val graph: AppGraph) 
         } else {
             IslandColors.BLUE
         }
+        // Per-app personality: the foreground app's own motion preset, if it has one.
+        val appPreset = settings.ruleFor(foreground.current.value).motionPreset
         rc.settings = RenderSettings(
             theme = s.islandTheme,
-            motion = s.motionProfile(systemReduceMotion = !ValueAnimator.areAnimatorsEnabled()),
+            motion = s.motionProfile(
+                systemReduceMotion = !ValueAnimator.areAnimatorsEnabled(),
+                systemSpeed = 1f / systemAnimationScale.coerceIn(0.25f, 4f),
+                preset = appPreset,
+            ),
             performance = s.performanceMode,
             systemPowerSave = service.getSystemService(PowerManager::class.java).isPowerSaveMode,
             waveform = s.mediaWaveform,
@@ -321,6 +389,7 @@ class OverlayRuntime(private val service: Service, private val graph: AppGraph) 
             lensGlint = s.lensGlint,
             blurReveal = s.blurReveal,
             tiltDepth = s.tiltDepth,
+            custom = CustomTheme(s.customRimColor, s.customGlowColor, s.customHighlight, s.customRimWidthDp),
         )
         view.requestFrame()
     }
@@ -352,6 +421,7 @@ class OverlayRuntime(private val service: Service, private val graph: AppGraph) 
         val visible = reason == null
         val immediate = !st.interactive
         if (visible) view.visibility = View.VISIBLE
+        if (!visible || fullscreen) StatusBarCleanup.setCardOpen(service, false)
         rc.settings = rc.settings.copy(calibrationGuides = calibrating)
         controller.setVisibility(visible, minPriority, immediate)
         if (!visible && immediate) view.visibility = View.GONE
@@ -366,6 +436,8 @@ class OverlayRuntime(private val service: Service, private val graph: AppGraph) 
     private fun onIslandBounds(bounds: RectF, settled: Boolean) {
         val g = rc.geometry
         val scene = view.scene
+        // Seamless status bar: bring the icons back once the island has shrunk out of their way.
+        if (settled && !coversStatusBar()) StatusBarCleanup.setCardOpen(service, false)
         if (settled && scene.state == IslandState.Hidden && scene.isFullyHidden) {
             view.visibility = View.GONE
             return

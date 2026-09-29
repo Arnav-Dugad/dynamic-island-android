@@ -85,6 +85,16 @@ class IslandScene(private val rc: RenderContext) {
     private var rawDragX = 0f
     private var rawDragY = 0f
 
+    // Grab and flick: long-press an open card and it follows the finger, then springs home.
+    private val grabX = Spring(0f, restThreshold = 0.3f)
+    private val grabY = Spring(0f, restThreshold = 0.3f)
+    private val lift = Spring(0f, SpringSpec(0.3f, 0.7f), restThreshold = 0.002f)
+    var isGrabbed = false
+        private set
+
+    /** Whether the split bubble is still joined to the pill by its liquid neck. */
+    private var bridgeLinked = false
+
     // Tilt depth (expanded content only).
     private val tiltX = Spring(0f, SpringSpec(0.4f, 1f), restThreshold = 0.05f)
     private val tiltY = Spring(0f, SpringSpec(0.4f, 1f), restThreshold = 0.05f)
@@ -132,6 +142,10 @@ class IslandScene(private val rc: RenderContext) {
     ), null)
     private var glowGradient: RadialGradient? = null
     private var glowGradientColor = 0
+    private var customGlow: RadialGradient? = null
+    private var customGlowColor = 0
+    private var customHighlight: LinearGradient? = null
+    private var customHighlightAlpha = -1
     private val tmpRect = RectF()
     private val heroRect = RectF()
 
@@ -476,6 +490,35 @@ class IslandScene(private val rc: RenderContext) {
         if (expressive) pulse.impulse(-16f)
     }
 
+    /** A soft ring in the system accent around the camera, and a breath of the pill, on unlock. */
+    fun unlockBloom() {
+        if (!expressive) return
+        arrival.start(geometry.anchorX, geometry.cameraY, geometry.holeRadius, rc.settings.systemAccent)
+        pulse.impulse(-12f)
+    }
+
+    fun grab() {
+        if (!expressive) return
+        isGrabbed = true
+        lift.animateTo(1f)
+    }
+
+    fun grabMove(dx: Float, dy: Float) {
+        grabX.snapTo(rubberBand(dx, rc.dp(70f)))
+        grabY.snapTo(rubberBand(dy, rc.dp(44f)))
+    }
+
+    /** Lets go: the island flies home with the finger's velocity and a little overshoot. */
+    fun releaseGrab(vx: Float, vy: Float) {
+        isGrabbed = false
+        val spec = SpringSpec(0.42f, 0.5f)
+        grabX.animateTo(0f, spec)
+        grabY.animateTo(0f, spec)
+        grabX.setVelocity(vx * 0.4f)
+        grabY.setVelocity(vy * 0.4f)
+        lift.animateTo(0f)
+    }
+
     fun setTilt(dx: Float, dy: Float) {
         tiltX.animateTo(dx)
         tiltY.animateTo(dy)
@@ -636,6 +679,10 @@ class IslandScene(private val rc: RenderContext) {
         if (dragY.step(dt)) moving = true
         if (tiltX.step(dt)) moving = true
         if (tiltY.step(dt)) moving = true
+        if (grabX.step(dt)) moving = true
+        if (grabY.step(dt)) moving = true
+        if (lift.step(dt)) moving = true
+        if (stepSurfaceTension()) moving = true
         if (arrival.step(dt)) moving = true
         if (glint.step(dt)) moving = true
         if (shimmer.step(dt)) moving = true
@@ -675,6 +722,37 @@ class IslandScene(private val rc: RenderContext) {
             }
         }
         return moving
+    }
+
+    /**
+     * Liquid split: when the neck between pill and bubble stretches past breaking point both drops
+     * recoil, and when the bubble falls back in the pill gulps it. Uses last frame's geometry.
+     */
+    private fun stepSurfaceTension(): Boolean {
+        val bs = bubbleSize.value
+        if (bs <= 0.5f) {
+            bridgeLinked = false
+            return false
+        }
+        val r1 = radius
+        val r2 = bs / 2f
+        val dx = bubbleCx.value - (shapeRect.right - r1)
+        val dy = bubbleTop.value + r2 - (shapeRect.top + r1)
+        val d = hypot(dx, dy)
+        val linked = d < r1 + r2 + r2 * 2.4f
+        var kicked = false
+        if (expressive) {
+            if (bridgeLinked && !linked && bubbleWanted) {
+                bubbleSize.impulse(r2 * 9f)
+                pulse.impulse(9f)
+                kicked = true
+            } else if (!bridgeLinked && linked && !bubbleWanted) {
+                pulse.impulse(14f)
+                kicked = true
+            }
+        }
+        bridgeLinked = linked
+        return kicked
     }
 
     private val IslandState.isQuiet: Boolean get() = this == IslandState.Hidden || this == IslandState.Idle
@@ -752,6 +830,17 @@ class IslandScene(private val rc: RenderContext) {
             h = max(h * 0.8f, h - abs(dx) * 0.06f)
         }
 
+        // Grab: the whole island follows the finger and lifts slightly.
+        centerX += grabX.value
+        t += grabY.value
+        val l = lift.value
+        if (l > 0.001f) {
+            val s = 1f + 0.03f * l
+            t -= h * (s - 1f) / 2f
+            w *= s
+            h *= s
+        }
+
         // Fade-scale when hiding.
         val v = visibility.value
         if (v < 0.999f) {
@@ -783,6 +872,7 @@ class IslandScene(private val rc: RenderContext) {
         // Behind the island: the arrival ripple and the album glow.
         arrival.draw(canvas)
         drawGlow(canvas, v)
+        if (theme == IslandTheme.CUSTOM) drawCustomGlow(canvas, v)
 
         // Shape.
         SmoothShapes.roundRect(shapePath, shapeRect.left, shapeRect.top, shapeRect.right, shapeRect.bottom, radius)
@@ -791,7 +881,12 @@ class IslandScene(private val rc: RenderContext) {
         if (hasBubble) {
             val bs = bubbleRect.width()
             bubblePath.rewind()
-            bubblePath.addCircle(bubbleRect.centerX(), bubbleRect.centerY(), bs / 2f, Path.Direction.CW)
+            // The drop stretches along its motion like liquid.
+            val k = if (expressive) (bubbleCx.velocity / (1500f * rc.dp(1f)) * 0.18f * rc.settings.motionIntensity).coerceIn(-0.2f, 0.2f) else 0f
+            val rx = bs / 2f * (1f + abs(k))
+            val ry = bs / 2f * (1f - abs(k) * 0.6f)
+            tmpRect.set(bubbleRect.centerX() - rx, bubbleRect.centerY() - ry, bubbleRect.centerX() + rx, bubbleRect.centerY() + ry)
+            bubblePath.addOval(tmpRect, Path.Direction.CW)
             val r1 = radius
             val x1 = shapeRect.right - r1
             val y1 = shapeRect.top + r1
@@ -926,6 +1021,27 @@ class IslandScene(private val rc: RenderContext) {
         canvas.drawOval(tmpRect, glowPaint)
     }
 
+    /** Custom theme: a soft light in the user's colour that the island sits on. */
+    private fun drawCustomGlow(canvas: Canvas, v: Float) {
+        val color = rc.settings.custom.glow
+        if ((color ushr 24) == 0 || state == IslandState.Hidden) return
+        if (customGlow == null || customGlowColor != color) {
+            customGlow = RadialGradient(0f, 0f, 1f, ColorExtractor.withAlpha(color, 0.5f), 0x00000000, Shader.TileMode.CLAMP)
+            customGlowColor = color
+        }
+        val gx = shapeRect.centerX()
+        val gy = shapeRect.centerY()
+        val rx = shapeRect.width() / 2f + rc.dp(18f)
+        val ry = shapeRect.height() / 2f + rc.dp(18f)
+        shaderMatrix.setScale(rx, ry)
+        shaderMatrix.postTranslate(gx, gy)
+        customGlow?.setLocalMatrix(shaderMatrix)
+        glowPaint.shader = customGlow
+        glowPaint.alpha = (255 * v * if (state == IslandState.Idle) 0.5f else 1f).toInt().coerceIn(0, 255)
+        tmpRect.set(gx - rx, gy - ry, gx + rx, gy + ry)
+        canvas.drawOval(tmpRect, glowPaint)
+    }
+
     private fun buildGhostPaths() {
         val g = ghost.rect
         SmoothShapes.roundRect(ghostPath, g.left, g.top, g.right, g.bottom, ghost.radius)
@@ -992,6 +1108,30 @@ class IslandScene(private val rc: RenderContext) {
                 canvas.drawPath(shapePath, rimPaint)
                 shimmer.draw(canvas, shapePath, shapeRect, v)
             }
+            IslandTheme.CUSTOM -> {
+                val c = rc.settings.custom
+                val highlightAlpha = (c.highlight.coerceIn(0f, 1f) * 0x44).toInt()
+                if (highlightAlpha > 0) {
+                    if (customHighlight == null || customHighlightAlpha != highlightAlpha) {
+                        customHighlight = LinearGradient(0f, 0f, 0f, 1f, (highlightAlpha shl 24) or 0xFFFFFF, 0x00FFFFFF, Shader.TileMode.CLAMP)
+                        customHighlightAlpha = highlightAlpha
+                    }
+                    shaderMatrix.setScale(1f, shapeRect.height() * 0.55f)
+                    shaderMatrix.postTranslate(0f, shapeRect.top)
+                    customHighlight?.setLocalMatrix(shaderMatrix)
+                    fillPaint.shader = customHighlight
+                    fillPaint.alpha = (255 * v).toInt()
+                    canvas.drawPath(shapePath, fillPaint)
+                    fillPaint.shader = null
+                }
+                if (c.rimWidthDp > 0.05f) {
+                    rimPaint.shader = null
+                    rimPaint.strokeWidth = rc.dp(c.rimWidthDp)
+                    rimPaint.color = c.rim
+                    rimPaint.alpha = ((c.rim ushr 24) * v * if (state == IslandState.Idle) 0.55f else 1f).toInt().coerceIn(0, 255)
+                    canvas.drawPath(shapePath, rimPaint)
+                }
+            }
             IslandTheme.RGB -> {
                 shaderMatrix.setRotate((rc.animTime * 90f) % 360f)
                 shaderMatrix.postTranslate(shapeRect.centerX(), shapeRect.centerY())
@@ -1036,6 +1176,8 @@ class IslandScene(private val rc: RenderContext) {
         if (mainLayer?.presenter?.glowColor?.let { it != 0 } == true && state.isLarge) {
             out.union(target.left, target.top, target.right, target.bottom + rc.dp(34f))
         }
+        if (rc.settings.theme == IslandTheme.CUSTOM) out.inset(-rc.dp(20f), -rc.dp(20f))
+        if (isGrabbed || !grabX.isAtRest || !grabY.isAtRest) out.inset(-rc.dp(72f), -rc.dp(48f))
     }
 
     val dragOffsetX: Float get() = rawDragX

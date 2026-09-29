@@ -92,6 +92,15 @@ enum class EventType(val defaultPriority: EventPriority) {
     MONITOR(EventPriority.BACKGROUND_ACTIVITY),
     CUSTOM(EventPriority.NOTIFICATION),
     GLANCE(EventPriority.NOTIFICATION),
+    TORCH(EventPriority.CHARGING),
+    CALENDAR(EventPriority.CHARGING),
+
+    /** Deliveries, rides and Android 16 Live Updates (promoted ongoing notifications). */
+    LIVE_UPDATE(EventPriority.NAVIGATION),
+    SCREENSHOT(EventPriority.NOTIFICATION),
+
+    /** Short confirmation, e.g. a quick reply that was sent. */
+    CONFIRM(EventPriority.NOTIFICATION),
 
     /** Synthetic: the stack of every running activity (never posted by a source). */
     STACK(EventPriority.BACKGROUND_ACTIVITY),
@@ -116,6 +125,7 @@ enum class Glyph {
     SPEAKER, CAR, DEVICE, PHONE, PHONE_DOWN, VIDEO, TIMER, STOPWATCH, NAV_ARROW, DOWNLOAD, CHECK,
     ROTATE_LOCK, ROTATE, HOTSPOT, RECORD, CLIPBOARD, CHIP, PLAY, PAUSE, NEXT, PREVIOUS, PLUS, CLOSE,
     STOP, FLAG, INFO, WARNING, SPARK, MESSAGE, OPEN, REPLY, CALENDAR, ALARM,
+    FLASHLIGHT, LEAF, SCREENSHOT, SCOOTER, SHARE, EDIT,
 }
 
 enum class ActionStyle { DEFAULT, PRIMARY, POSITIVE, DESTRUCTIVE }

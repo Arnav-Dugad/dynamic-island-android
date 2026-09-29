@@ -14,6 +14,9 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
@@ -21,6 +24,7 @@ import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -39,11 +43,14 @@ import com.arnav.island.settings.ui.screens.AdvancedScreen
 import com.arnav.island.settings.ui.screens.AppearanceScreen
 import com.arnav.island.settings.ui.screens.AppsScreen
 import com.arnav.island.settings.ui.screens.BatteryScreen
+import com.arnav.island.settings.ui.screens.BlendScreen
 import com.arnav.island.settings.ui.screens.BluetoothScreen
 import com.arnav.island.settings.ui.screens.CalibrationScreen
 import com.arnav.island.settings.ui.screens.ChargingScreen
 import com.arnav.island.settings.ui.screens.DeveloperScreen
+import com.arnav.island.settings.ui.screens.DiagnosticsScreen
 import com.arnav.island.settings.ui.screens.EventsScreen
+import com.arnav.island.settings.ui.screens.GalleryScreen
 import com.arnav.island.settings.ui.screens.GesturesScreen
 import com.arnav.island.settings.ui.screens.HomeScreen
 import com.arnav.island.settings.ui.screens.IslandScreen
@@ -57,11 +64,12 @@ import com.arnav.island.settings.ui.screens.StatusBarScreen
 import com.arnav.island.settings.ui.screens.TimersScreen
 import com.arnav.island.settings.ui.screens.WhatsNewScreen
 import com.arnav.island.storage.IslandSettings
+import kotlinx.coroutines.launch
 
 enum class Dest {
     HOME, ISLAND, CALIBRATION, EVENTS, APPS, MEDIA, NOTIFICATIONS, BATTERY, CHARGING, BLUETOOTH, TIMERS,
     GESTURES, APPEARANCE, PERFORMANCE, PRIVACY, ADVANCED, DEVELOPER, ABOUT,
-    STUDIO, WHATS_NEW, SHARE, STATUS_BAR,
+    STUDIO, WHATS_NEW, SHARE, STATUS_BAR, BLEND, GALLERY, DIAGNOSTICS,
 }
 
 /** Everything a screen needs besides the settings snapshot. */
@@ -117,7 +125,7 @@ fun rememberPermissions(): State<PermissionSnapshot> {
 }
 
 @Composable
-fun IslandRoot(graph: AppGraph, initial: Dest?) {
+fun IslandRoot(graph: AppGraph, initial: Dest?, sharedSetup: String? = null, onSetupHandled: () -> Unit = {}) {
     val settings by graph.settings.state.collectAsStateWithLifecycle()
     val loaded by graph.settings.loaded.collectAsStateWithLifecycle()
     val context = LocalContext.current
@@ -168,6 +176,23 @@ fun IslandRoot(graph: AppGraph, initial: Dest?) {
     }
 
     BackHandler(enabled = stack.size > 1) { ui.back() }
+
+    // A friend's setup opened from a link or QR code: confirm before applying anything.
+    if (sharedSetup != null) {
+        val scope = rememberCoroutineScope()
+        AlertDialog(
+            onDismissRequest = onSetupHandled,
+            title = { Text("Use a friend's setup?") },
+            text = { Text("Their island size, motion, theme and behaviour replace yours. Your camera calibration, permissions and app rules stay as they are.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    scope.launch { graph.settings.importSetup(sharedSetup) }
+                    onSetupHandled()
+                }) { Text("Apply") }
+            },
+            dismissButton = { TextButton(onClick = onSetupHandled) { Text("Cancel") } },
+        )
+    }
     val permissions by rememberPermissions()
 
     AnimatedContent(
@@ -207,6 +232,9 @@ fun IslandRoot(graph: AppGraph, initial: Dest?) {
             Dest.WHATS_NEW -> WhatsNewScreen(settings, ui)
             Dest.SHARE -> ShareScreen(ui)
             Dest.STATUS_BAR -> StatusBarScreen(settings, ui)
+            Dest.BLEND -> BlendScreen(settings, ui)
+            Dest.GALLERY -> GalleryScreen(settings, ui)
+            Dest.DIAGNOSTICS -> DiagnosticsScreen(settings, ui)
         }
     }
 }

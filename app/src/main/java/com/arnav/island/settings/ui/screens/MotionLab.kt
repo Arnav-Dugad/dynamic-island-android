@@ -1,11 +1,13 @@
 package com.arnav.island.settings.ui.screens
 
+import android.provider.Settings
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -34,7 +36,7 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.foundation.background
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.arnav.island.animation.Spring
 import com.arnav.island.animation.SpringSpec
@@ -76,8 +78,10 @@ private class SpringCurve(spec: SpringSpec, val seconds: Float, samples: Int = 1
  */
 @Composable
 fun MotionLab(s: IslandSettings) {
-    val profile = remember(s.motionPreset, s.animationSpeed, s.animationIntensity, s.customResponse, s.customDamping) {
-        s.motionProfile(systemReduceMotion = false)
+    val context = LocalContext.current
+    val scale = remember { Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f).takeIf { it > 0f } ?: 1f }
+    val profile = remember(s.motionPreset, s.animationSpeed, s.animationIntensity, s.customResponse, s.customDamping, s.followSystemAnimationSpeed) {
+        s.motionProfile(systemReduceMotion = false, systemSpeed = 1f / scale.coerceIn(0.25f, 4f))
     }
     val window = 1.4f
     val expand = remember(profile) { SpringCurve(profile.widthExpand, window) }

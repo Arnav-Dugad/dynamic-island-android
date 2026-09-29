@@ -29,6 +29,8 @@ data class MediaPayload(
     /** 0..1 media volume (stream volume, or the remote volume for cast sessions). */
     val volume: Float? = null,
     val setVolume: SeekAction? = null,
+    /** Live text the player publishes while a track plays (synced lyrics, radio text). */
+    val liveLine: String? = null,
     /** Where audio is playing, e.g. "Galaxy Buds2 Pro" or "Phone speaker". */
     val outputName: String? = null,
     val outputKind: OutputKind = OutputKind.SPEAKER,
@@ -188,6 +190,46 @@ data class MonitorPayload(
 ) : EventPayload
 
 data class CustomPayload(val appLabel: String, val packageName: String?) : EventPayload
+
+/** Flashlight: brightness steps come from the camera's own torch strength range (Android 13+). */
+data class TorchPayload(
+    val level: Int,
+    val maxLevel: Int,
+    val setLevel: SeekAction? = null,
+) : EventPayload
+
+/** The next calendar event, read from CalendarContract (only with the user's calendar permission). */
+data class CalendarPayload(
+    val title: String,
+    val startsAt: Long,
+    val endsAt: Long,
+    val location: String,
+    val calendarColor: Int,
+    val hasJoinLink: Boolean,
+) : EventPayload
+
+/**
+ * A delivery, ride or Android 16 Live Update. [shortText] is the app's own short status (the
+ * status bar chip text on Android 16) or an ETA found in its text; progress and points come from
+ * Notification.ProgressStyle when the app uses it.
+ */
+data class LiveUpdatePayload(
+    val appLabel: String,
+    val packageName: String,
+    val title: String,
+    val text: String,
+    val shortText: String?,
+    val progress: Float?,
+    val points: List<Float> = emptyList(),
+    val segments: List<Pair<Float, Int>> = emptyList(),
+    val hasTrackerIcon: Boolean = false,
+    val vehicle: Glyph = Glyph.SCOOTER,
+) : EventPayload
+
+data class ScreenshotPayload(val uri: String) : EventPayload
+
+/** [pendingMs]: how long the "sending" dots play before the check. */
+data class ConfirmPayload(val label: String, val detail: String, val pendingMs: Long = 650) : EventPayload
 
 /** "Glance" card for a long-press on the idle island. Every value is read from Android. */
 data class GlancePayload(

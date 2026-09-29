@@ -10,7 +10,8 @@ import android.os.VibrationAttributes
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
-import android.util.Log
+import android.provider.Settings
+import com.arnav.island.util.Diagnostics
 import java.util.EnumMap
 import kotlin.math.PI
 import kotlin.math.exp
@@ -94,7 +95,7 @@ class IslandHaptics(context: Context, private val enabled: () -> Boolean) {
                 vibrator.vibrate(effect)
             }
         } catch (e: RuntimeException) {
-            Log.w("IslandHaptics", "Vibration failed", e)
+            Diagnostics.w("IslandHaptics", "Vibration failed", e)
         }
     }
 }
@@ -108,17 +109,20 @@ class IslandSounds(context: Context, private val enabled: () -> Boolean) {
     enum class Sound { EXPAND, COLLAPSE, ARRIVAL }
 
     private val audio = context.getSystemService(AudioManager::class.java)
+    private val resolver = context.contentResolver
     private val tracks = EnumMap<Sound, AudioTrack>(Sound::class.java)
 
     fun play(sound: Sound) {
         if (!enabled() || audio.ringerMode != AudioManager.RINGER_MODE_NORMAL) return
+        // Follows the phone's own "touch sounds" switch.
+        if (Settings.System.getInt(resolver, Settings.System.SOUND_EFFECTS_ENABLED, 1) == 0) return
         try {
             val track = tracks.getOrPut(sound) { create(sound) }
             if (track.playState == AudioTrack.PLAYSTATE_PLAYING) track.stop()
             track.reloadStaticData()
             track.play()
         } catch (e: RuntimeException) {
-            Log.w("IslandSounds", "Sound failed", e)
+            Diagnostics.w("IslandSounds", "Sound failed", e)
         }
     }
 

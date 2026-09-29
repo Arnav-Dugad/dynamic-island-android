@@ -13,13 +13,13 @@ import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import android.provider.Settings
-import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import com.arnav.island.IslandApp
 import com.arnav.island.R
 import com.arnav.island.settings.MainActivity
+import com.arnav.island.util.Diagnostics
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -120,9 +120,9 @@ class IslandOverlayService : Service() {
             } catch (e: Exception) {
                 // Android 12+ may refuse background starts (e.g. without the battery exemption).
                 if (Build.VERSION.SDK_INT >= 31 && e is ForegroundServiceStartNotAllowedException) {
-                    Log.w(TAG, "Background start refused; will start when Island is next opened")
+                    Diagnostics.w(TAG, "Background start refused; will start when Island is next opened")
                 } else {
-                    Log.w(TAG, "Could not start overlay service", e)
+                    Diagnostics.w(TAG, "Could not start overlay service", e)
                 }
                 false
             }

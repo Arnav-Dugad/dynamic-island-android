@@ -43,7 +43,6 @@ import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -69,6 +68,7 @@ import com.arnav.island.overlay.IslandOverlayService
 import com.arnav.island.permissions.Permissions
 import com.arnav.island.settings.ui.Ui
 import com.arnav.island.settings.ui.components.IconBadge
+import com.arnav.island.settings.ui.components.OneUiSwitch
 import com.arnav.island.settings.ui.preview.IslandPreview
 import com.arnav.island.settings.ui.rememberPermissions
 import com.arnav.island.settings.ui.theme.BadgeColors
@@ -161,7 +161,7 @@ fun OnboardingScreen(graph: AppGraph, settings: IslandSettings, onFinish: () -> 
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text("Use Island", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-                        Switch(checked = settings.enabled, onCheckedChange = { ui.setEnabled(it) }, enabled = permissions.overlay)
+                        OneUiSwitch(checked = settings.enabled, onCheckedChange = { ui.setEnabled(it) }, enabled = permissions.overlay)
                     }
                     if (!permissions.overlay) Note("Allow \"Display over other apps\" on step 2 first.")
                     if (running) {

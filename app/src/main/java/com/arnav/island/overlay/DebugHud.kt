@@ -6,9 +6,9 @@ import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.RectF
 import android.graphics.Typeface
-import android.util.Log
 import android.view.View
 import android.view.WindowManager
+import com.arnav.island.util.Diagnostics
 
 /**
  * Optional developer HUD in its own non-touchable window. The window alpha stays at 0.8 so that
@@ -35,7 +35,7 @@ class DebugHud(context: Context) {
             wm.addView(hudView, params)
             attached = true
         } catch (e: RuntimeException) {
-            Log.w("IslandHud", "HUD window rejected", e)
+            Diagnostics.w("IslandHud", "HUD window rejected", e)
         }
     }
 

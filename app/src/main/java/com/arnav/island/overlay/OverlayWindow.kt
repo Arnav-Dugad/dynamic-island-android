@@ -5,10 +5,10 @@ import android.graphics.PixelFormat
 import android.graphics.Rect
 import android.graphics.RectF
 import android.os.Build
-import android.util.Log
 import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
+import com.arnav.island.util.Diagnostics
 import kotlin.math.ceil
 import kotlin.math.floor
 
@@ -38,7 +38,7 @@ class OverlayWindow(private val context: Context, private val view: View) {
             attached = true
         } catch (e: RuntimeException) {
             // Overlay permission revoked or window token rejected: fail quietly, the service stops.
-            Log.w(TAG, "Could not add overlay window", e)
+            Diagnostics.w(TAG, "Could not add overlay window", e)
         }
     }
 
@@ -47,7 +47,7 @@ class OverlayWindow(private val context: Context, private val view: View) {
         try {
             wm.removeViewImmediate(view)
         } catch (e: RuntimeException) {
-            Log.w(TAG, "Could not remove overlay window", e)
+            Diagnostics.w(TAG, "Could not remove overlay window", e)
         }
         attached = false
     }
@@ -58,7 +58,7 @@ class OverlayWindow(private val context: Context, private val view: View) {
         try {
             wm.updateViewLayout(view, params)
         } catch (e: RuntimeException) {
-            Log.w(TAG, "updateViewLayout failed", e)
+            Diagnostics.w(TAG, "updateViewLayout failed", e)
         }
     }
 
@@ -70,7 +70,7 @@ class OverlayWindow(private val context: Context, private val view: View) {
         try {
             wm.updateViewLayout(view, params)
         } catch (e: RuntimeException) {
-            Log.w(TAG, "refresh rate update failed", e)
+            Diagnostics.w(TAG, "refresh rate update failed", e)
         }
     }
 
@@ -154,7 +154,7 @@ class FullscreenProbe(context: Context, private val onStatusBarVisible: (Boolean
             wm.addView(view, params)
             attached = true
         } catch (e: RuntimeException) {
-            Log.w("IslandProbe", "Probe window rejected", e)
+            Diagnostics.w("IslandProbe", "Probe window rejected", e)
         }
     }
 

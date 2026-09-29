@@ -2,7 +2,6 @@ package com.arnav.island.settings.ui.screens
 
 import android.graphics.Matrix
 import android.graphics.SweepGradient
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
@@ -10,6 +9,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -181,6 +181,9 @@ fun AppearanceScreen(s: IslandSettings, ui: Ui) {
                 }
             }
         }
+        if (s.islandTheme == IslandTheme.CUSTOM) {
+            item { CustomThemeEditor(s, ui) }
+        }
         item {
             Group(title = "Content") {
                 SwitchRow("Colours from artwork", s.tintFromArtwork, { v -> ui.update { it.copy(tintFromArtwork = v) } }, "Tint the equalizer and progress with the album art", Icons.Rounded.Animation, BadgeColors.Pink)
@@ -253,6 +256,10 @@ private fun ThemeSwatch(theme: IslandTheme, selected: Boolean) {
                     IslandTheme.RGB -> {
                         drawRoundRect(Color.Black, origin, shape, r)
                         drawRoundRect(RotatingSweep(RgbRim, 360f * t, Offset(size.width / 2f, size.height / 2f)), origin, shape, r, style = Stroke(1.6.dp.toPx()))
+                    }
+                    IslandTheme.CUSTOM -> {
+                        drawRoundRect(Color.Black, origin, shape, r)
+                        drawRoundRect(Color(0xFF7CF7FF).copy(alpha = 0.5f + 0.5f * sin(t * 2f * PI.toFloat()).coerceAtLeast(0f)), origin, shape, r, style = Stroke(1.2.dp.toPx()))
                     }
                     else -> drawRoundRect(Color.Black, origin, shape, r)
                 }

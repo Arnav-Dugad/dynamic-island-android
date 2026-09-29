@@ -2,6 +2,8 @@ package com.arnav.island.island.render.presenters
 
 import android.graphics.Canvas
 import android.graphics.Paint
+import com.arnav.island.animation.Spring
+import com.arnav.island.animation.SpringSpec
 import com.arnav.island.events.ActionStyle
 import com.arnav.island.events.EventType
 import com.arnav.island.events.Glyph
@@ -16,6 +18,7 @@ import com.arnav.island.island.render.RenderContext
 import com.arnav.island.island.render.RollingText
 import com.arnav.island.util.ColorExtractor
 import com.arnav.island.util.Formatters
+import kotlin.math.cos
 import kotlin.math.sin
 
 /** Timers, ringing timers and the stopwatch. */
@@ -38,6 +41,13 @@ class TimerPresenter(rc: RenderContext) : Presenter(rc) {
     override fun onBind(isUpdate: Boolean) {
         timer = event.payload as? TimerPayload
         stopwatch = event.payload as? StopwatchPayload
+        val laps = stopwatch?.laps?.size ?: 0
+        if (isUpdate && lapCount in 0 until laps) {
+            lapFlash.snapTo(1f)
+            lapFlash.animateTo(0f)
+            if (rc.settings.haptics) rc.haptics?.play(IslandHaptics.Cue.NOTCH, touch = false)
+        }
+        lapCount = laps
         if (mode == PresentMode.EXPANDED || mode == PresentMode.TOAST) layoutExpanded()
     }
 
@@ -70,10 +80,15 @@ class TimerPresenter(rc: RenderContext) : Presenter(rc) {
     private val bigText = RollingText()
     private var lastTickSecond = -1L
 
+    /** 1 right after a lap, relaxing to 0: flashes the time and sends a ripple from the dial. */
+    private val lapFlash = Spring(0f, SpringSpec(0.55f, 1f), restThreshold = 0.003f)
+    private var lapCount = -1
+
     override fun step(dt: Float): Boolean {
         var moving = super.step(dt)
         if (compactText.step(dt)) moving = true
         if (bigText.step(dt)) moving = true
+        if (lapFlash.step(dt)) moving = true
         return moving
     }
 
@@ -106,7 +121,8 @@ class TimerPresenter(rc: RenderContext) : Presenter(rc) {
         if (isStopwatch) {
             val sw = stopwatch ?: return -1
             if (!sw.isRunning) return -1
-            return if (mode == PresentMode.EXPANDED) maxOf(16L, rc.settings.decorativeFrameMs) else 1000 - (sw.elapsedAt(now) % 1000)
+            // The dial's hand moves smoothly in the pill too.
+            return if (mode == PresentMode.EXPANDED) maxOf(16L, rc.settings.decorativeFrameMs) else maxOf(33L, rc.settings.decorativeFrameMs)
         }
         val t = timer ?: return -1
         if (t.isPaused) return -1
@@ -147,8 +163,8 @@ class TimerPresenter(rc: RenderContext) : Presenter(rc) {
             }
             isStopwatch -> {
                 val sw = stopwatch ?: return
-                rc.glyphs.draw(canvas, Glyph.STOPWATCH, lx, cy, s * 0.92f, accent, a)
-                val color = if (sw.isRunning) IslandColors.TEXT else IslandColors.TEXT_SECONDARY
+                drawLapDial(canvas, sw, lx, cy, s / 2f - dp(1f), now, a)
+                val color = ColorExtractor.blend(if (sw.isRunning) IslandColors.TEXT else IslandColors.TEXT_SECONDARY, accent, lapFlash.value)
                 compactText.set(Formatters.elapsed(sw.elapsedAt(now)), direction = 1, animate = true)
                 compactText.draw(canvas, rc, right, rc.baseline(rc.numberPaint, cy), rc.numberPaint, color, a, Paint.Align.RIGHT)
             }
@@ -162,6 +178,37 @@ class TimerPresenter(rc: RenderContext) : Presenter(rc) {
                 compactText.draw(canvas, rc, right, rc.baseline(rc.numberPaint, cy), rc.numberPaint, color, a, Paint.Align.RIGHT)
                 canvas.restore()
             }
+        }
+    }
+
+    /**
+     * Stopwatch dial: a hand sweeping once a minute and a tick for every lap at the second it
+     * was taken. A new lap sends a ripple out of the dial.
+     */
+    private fun drawLapDial(canvas: Canvas, sw: StopwatchPayload, cx: Float, cy: Float, r: Float, now: Long, alpha: Float) {
+        rc.stroke.shader = null
+        rc.stroke.strokeWidth = dp(1.6f)
+        rc.stroke.color = IslandColors.TRACK
+        rc.stroke.alpha = (((IslandColors.TRACK ushr 24) * alpha)).toInt().coerceIn(0, 255)
+        canvas.drawCircle(cx, cy, r, rc.stroke)
+        val secondFraction = (sw.elapsedAt(now) % 60_000L) / 60_000f
+        rc.stroke.color = accent
+        rc.stroke.alpha = (255 * alpha).toInt().coerceIn(0, 255)
+        for (lap in sw.laps.takeLast(12)) {
+            val ang = Math.toRadians(((lap % 60_000L) / 60_000.0) * 360.0 - 90.0)
+            val c = cos(ang).toFloat()
+            val sn = sin(ang).toFloat()
+            canvas.drawLine(cx + c * r * 0.62f, cy + sn * r * 0.62f, cx + c * r, cy + sn * r, rc.stroke)
+        }
+        val hand = Math.toRadians(secondFraction * 360.0 - 90.0)
+        rc.stroke.strokeWidth = dp(2f)
+        canvas.drawLine(cx, cy, cx + cos(hand).toFloat() * r * 0.8f, cy + sin(hand).toFloat() * r * 0.8f, rc.stroke)
+        rc.circle(canvas, cx, cy, dp(1.8f), accent, alpha)
+        val f = lapFlash.value
+        if (f > 0.01f) {
+            rc.stroke.strokeWidth = dp(2f)
+            rc.stroke.alpha = (255 * alpha * f).toInt().coerceIn(0, 255)
+            canvas.drawCircle(cx, cy, r + (1f - f) * dp(10f), rc.stroke)
         }
     }
 
@@ -183,8 +230,15 @@ class TimerPresenter(rc: RenderContext) : Presenter(rc) {
 
         if (isStopwatch) {
             val sw = stopwatch ?: return
-            val label = if (sw.laps.isNotEmpty()) "Stopwatch · Lap ${sw.laps.size + 1}" else "Stopwatch"
-            rc.text(canvas, label, pad, top + dp(12f), rc.captionPaint, IslandColors.TEXT_SECONDARY, alpha)
+            val lastLap = sw.laps.lastOrNull()
+            val previous = sw.laps.getOrNull(sw.laps.size - 2) ?: 0L
+            val label = if (lastLap != null) {
+                "Lap ${sw.laps.size} · ${Formatters.stopwatch(lastLap - previous)}"
+            } else {
+                "Stopwatch"
+            }
+            val labelColor = ColorExtractor.blend(IslandColors.TEXT_SECONDARY, accent, lapFlash.value)
+            rc.text(canvas, label, pad, top + dp(12f), rc.captionPaint, labelColor, alpha)
             drawCircleButton(canvas, ACTION_TOGGLE, if (sw.isRunning) Glyph.STOP else Glyph.PLAY, first, buttonsY, dp(22f),
                 if (sw.isRunning) ActionStyle.DESTRUCTIVE else ActionStyle.POSITIVE, alpha, glyphScale = 0.44f)
             drawCircleButton(canvas, ACTION_SECONDARY, if (sw.isRunning) Glyph.FLAG else Glyph.CLOSE, first + dp(54f), buttonsY, dp(22f),

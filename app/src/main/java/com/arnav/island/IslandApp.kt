@@ -5,6 +5,7 @@ import android.provider.Settings
 import com.arnav.island.core.AppGraph
 import com.arnav.island.events.timer.TimerNotifications
 import com.arnav.island.overlay.IslandOverlayService
+import com.arnav.island.util.Diagnostics
 import kotlinx.coroutines.launch
 
 class IslandApp : Application() {
@@ -14,6 +15,7 @@ class IslandApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        Diagnostics.installCrashHandler(this)
         graph = AppGraph(this)
         IslandOverlayService.ensureChannel(this)
         TimerNotifications.ensureChannel(this)

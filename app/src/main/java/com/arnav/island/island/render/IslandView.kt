@@ -69,6 +69,9 @@ class IslandView(
     private var tracking = false
     private var dragging = false
     private var longPressed = false
+
+    /** Holding an open card: the island follows the finger (grab and flick). */
+    private var grabbing = false
     private var scrubbing = false
     private var downX = 0f
     private var downY = 0f
@@ -230,6 +233,7 @@ class IslandView(
                 tracking = true
                 dragging = false
                 longPressed = false
+                grabbing = false
                 scrubbing = false
                 detentLevel = 0
                 detents[0] = rc.dp(DETENT_EXPAND_DP)
@@ -269,6 +273,11 @@ class IslandView(
                 val dy = y - downY
                 if (scrubbing) {
                     downTarget?.let { scene.mainPresenter?.onScrub(scene.fractionIn(it, x)) }
+                    requestFrame()
+                    return true
+                }
+                if (grabbing) {
+                    scene.grabMove(dx, dy)
                     requestFrame()
                     return true
                 }
@@ -317,6 +326,7 @@ class IslandView(
         when {
             cancelled -> {
                 if (scrubbing) presenter?.onScrubEnd(presenter.scrubFraction ?: 0f)
+                if (grabbing) scene.releaseGrab(0f, 0f)
                 scene.releaseDrag(0f, 0f)
             }
             scrubbing -> {
@@ -325,6 +335,7 @@ class IslandView(
                 presenter?.onScrubEnd(fraction)
                 feedback(IslandHaptics.Cue.TICK)
             }
+            grabbing -> scene.releaseGrab(vx, vy)
             detentLevel >= 2 -> {
                 scene.releaseDrag(0f, vy)
                 host?.onSwipe(Swipe.DOWN_FAR, vy)
@@ -357,6 +368,7 @@ class IslandView(
         host?.onPressChanged(false)
         tracking = false
         dragging = false
+        grabbing = false
         scrubbing = false
         downTarget = null
         velocityTracker?.recycle()
@@ -384,6 +396,15 @@ class IslandView(
 
     private fun onLongPressTimeout() {
         if (!tracking || dragging || downTarget != null) return
+        if (scene.state.isLarge && rc.settings.touchDeformation) {
+            // An open card lifts off and can be moved around a little.
+            grabbing = true
+            scene.pressUp()
+            scene.grab()
+            feedback(IslandHaptics.Cue.NOTCH)
+            requestFrame()
+            return
+        }
         longPressed = true
         feedback(IslandHaptics.Cue.EXPAND)
         scene.pressUp()

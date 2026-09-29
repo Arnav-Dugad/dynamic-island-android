@@ -1,5 +1,7 @@
 package com.arnav.island.settings.ui.screens
 
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -8,9 +10,9 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -26,16 +28,14 @@ import androidx.compose.material.icons.rounded.QueryStats
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.SportsEsports
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
-import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -52,6 +52,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.arnav.island.animation.MotionPreset
 import com.arnav.island.events.NotificationPrivacy
 import com.arnav.island.permissions.PermissionSnapshot
 import com.arnav.island.permissions.Permissions
@@ -161,6 +162,7 @@ private fun AppRow(app: InstalledApp, rule: AppRule, ui: Ui, onClick: () -> Unit
         if (rule.priority == 1) add("High priority")
         if (rule.priority == -1) add("Low priority")
         if (rule.accent != 0) add("Custom colour")
+        rule.motionPreset?.let { add("${it.label} motion") }
         rule.privacy?.let { add(it.label) }
         if (app.isGame) add("Game")
         if (app.isVideo) add("Video")
@@ -210,6 +212,8 @@ private fun AppRuleSheet(app: InstalledApp, rule: AppRule, ui: Ui, onDismiss: ()
             SwitchRow("Show message text", rule.showText, { set(rule.copy(showText = it)) })
             ChipsRow(listOf<NotificationPrivacy?>(null) + NotificationPrivacy.entries, rule.privacy, { it?.label ?: "Default" }, { set(rule.copy(privacy = it)) }, title = "Privacy")
             AccentRow(rule.accent) { set(rule.copy(accent = it)) }
+            ChipsRow(listOf<MotionPreset?>(null) + MotionPreset.entries.filter { it != MotionPreset.CUSTOM }, rule.motionPreset,
+                { it?.label ?: "Default" }, { set(rule.copy(motionPreset = it)) }, title = "Motion while this app is open")
         }
     }
 }

@@ -37,6 +37,14 @@ object IslandColors {
     const val TEAL = 0xFF5EE6D0.toInt()
 }
 
+/** The user's own island theme: rim, glow under the island and a top highlight. */
+data class CustomTheme(
+    val rim: Int = 0xFF7CF7FF.toInt(),
+    val glow: Int = 0xFF7B4DFF.toInt(),
+    val highlight: Float = 0.5f,
+    val rimWidthDp: Float = 1.2f,
+)
+
 /** Render-relevant subset of the user's settings. */
 data class RenderSettings(
     val theme: IslandTheme = IslandTheme.CLASSIC_BLACK,
@@ -62,6 +70,7 @@ data class RenderSettings(
     val lensGlint: Boolean = true,
     val blurReveal: Boolean = true,
     val tiltDepth: Boolean = true,
+    val custom: CustomTheme = CustomTheme(),
 ) {
     val effectivePerformance: PerformanceMode
         get() = if (performance == PerformanceMode.ADAPTIVE && systemPowerSave) PerformanceMode.BATTERY_SAVER else performance

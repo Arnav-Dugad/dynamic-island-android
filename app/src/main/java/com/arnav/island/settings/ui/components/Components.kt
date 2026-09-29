@@ -1,10 +1,13 @@
 package com.arnav.island.settings.ui.components
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -16,14 +19,19 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.toggleable
@@ -39,20 +47,17 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
@@ -61,17 +66,27 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.arnav.island.settings.ui.theme.LocalIslandColors
 
-/** Standard settings page: large collapsing title + lazy content. */
-@OptIn(ExperimentalMaterial3Api::class)
+/**
+ * Standard settings page in the One UI layout: a tall header with the title centred in the top
+ * part of the screen (easy to read, and the content starts within thumb reach), which folds into
+ * the toolbar as the page scrolls.
+ */
 @Composable
 fun SettingsPage(
     title: String,
@@ -79,30 +94,93 @@ fun SettingsPage(
     actions: @Composable RowScope.() -> Unit = {},
     content: LazyListScope.() -> Unit,
 ) {
-    val scroll = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val bg = MaterialTheme.colorScheme.background
-    Scaffold(
-        modifier = Modifier.nestedScroll(scroll.nestedScrollConnection),
-        containerColor = bg,
-        topBar = {
-            LargeTopAppBar(
-                title = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                navigationIcon = {
-                    if (onBack != null) {
-                        IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back") }
-                    }
-                },
-                actions = actions,
-                scrollBehavior = scroll,
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = bg, scrolledContainerColor = bg),
+    val list = rememberLazyListState()
+    val headerHeight = (LocalConfiguration.current.screenHeightDp * 0.26f).coerceIn(140f, 250f).dp
+    val headerPx = with(LocalDensity.current) { headerHeight.toPx() }
+    val collapse by remember {
+        derivedStateOf {
+            if (list.firstVisibleItemIndex > 0) 1f else (list.firstVisibleItemScrollOffset / (headerPx * 0.72f)).coerceIn(0f, 1f)
+        }
+    }
+    val bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    Column(Modifier.fillMaxSize().background(bg)) {
+        Row(
+            Modifier.fillMaxWidth().statusBarsPadding().height(56.dp).padding(horizontal = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (onBack != null) {
+                IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back") }
+            } else {
+                Spacer(Modifier.width(16.dp))
+            }
+            Text(
+                title,
+                style = MaterialTheme.typography.titleLarge,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f).alpha(((collapse - 0.55f) / 0.45f).coerceIn(0f, 1f)),
             )
-        },
-    ) { padding ->
+            actions()
+        }
         LazyColumn(
+            state = list,
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = padding.calculateTopPadding(), bottom = padding.calculateBottomPadding() + 40.dp),
-            content = content,
-        )
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = bottom + 40.dp),
+        ) {
+            item(key = "one-ui-header") {
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .height(headerHeight)
+                        .graphicsLayer {
+                            alpha = 1f - collapse
+                            translationY = collapse * headerPx * 0.3f
+                        },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        title,
+                        style = MaterialTheme.typography.headlineLarge.copy(fontSize = 34.sp),
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(horizontal = 24.dp),
+                    )
+                }
+            }
+            content()
+        }
+    }
+}
+
+/**
+ * One UI style switch: a white thumb on a pill track that fills with the accent colour, with a
+ * small springy overshoot. [onCheckedChange] null means the row around it handles the toggle.
+ */
+@Composable
+fun OneUiSwitch(checked: Boolean, onCheckedChange: ((Boolean) -> Unit)?, enabled: Boolean = true) {
+    val t by animateFloatAsState(if (checked) 1f else 0f, spring(dampingRatio = 0.62f, stiffness = 520f), label = "switch")
+    val dark = LocalIslandColors.current.isDark
+    val on = MaterialTheme.colorScheme.primary
+    val off = if (dark) Color(0xFF48484E) else Color(0xFFCFCFD4)
+    val track = lerp(off, on, t.coerceIn(0f, 1f))
+    val toggle = if (onCheckedChange != null) {
+        Modifier.toggleable(value = checked, enabled = enabled, role = Role.Switch, onValueChange = onCheckedChange)
+    } else {
+        Modifier
+    }
+    Canvas(
+        Modifier
+            .size(width = 50.dp, height = 28.dp)
+            .alpha(if (enabled) 1f else 0.4f)
+            .then(toggle),
+    ) {
+        val r = size.height / 2f
+        drawRoundRect(track, cornerRadius = CornerRadius(r, r))
+        val inset = 3.dp.toPx()
+        val thumb = r - inset
+        val x = inset + thumb + (size.width - 2 * (inset + thumb)) * t
+        drawCircle(Color(0x33000000), thumb + 0.8.dp.toPx(), Offset(x, r + 0.8.dp.toPx()))
+        drawCircle(Color.White, thumb, Offset(x, r))
     }
 }
 
@@ -219,7 +297,7 @@ fun SwitchRow(
             if (subtitle != null) Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Spacer(Modifier.width(12.dp))
-        Switch(checked = checked, onCheckedChange = null, enabled = enabled)
+        OneUiSwitch(checked = checked, onCheckedChange = null, enabled = enabled)
     }
 }
 

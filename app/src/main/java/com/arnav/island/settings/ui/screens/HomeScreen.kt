@@ -33,13 +33,15 @@ import androidx.compose.material.icons.rounded.CenterFocusStrong
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Crop169
 import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.Info
-import androidx.compose.material.icons.rounded.NewReleases
 import androidx.compose.material.icons.rounded.Layers
 import androidx.compose.material.icons.rounded.MusicNote
+import androidx.compose.material.icons.rounded.NewReleases
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.NotificationsOff
 import androidx.compose.material.icons.rounded.Palette
+import androidx.compose.material.icons.rounded.PhoneAndroid
 import androidx.compose.material.icons.rounded.QrCode2
 import androidx.compose.material.icons.rounded.Science
 import androidx.compose.material.icons.rounded.Shield
@@ -52,7 +54,6 @@ import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -76,6 +77,7 @@ import com.arnav.island.settings.ui.Ui
 import com.arnav.island.settings.ui.components.Group
 import com.arnav.island.settings.ui.components.InfoCard
 import com.arnav.island.settings.ui.components.NavRow
+import com.arnav.island.settings.ui.components.OneUiSwitch
 import com.arnav.island.settings.ui.preview.IslandPreview
 import com.arnav.island.settings.ui.preview.PreviewIsland
 import com.arnav.island.settings.ui.theme.BadgeColors
@@ -181,6 +183,7 @@ fun HomeScreen(settings: IslandSettings, permissions: PermissionSnapshot, ui: Ui
 
         item {
             Group(title = "Island") {
+                NavRow("Blend with One UI", "Seamless status bar, no double pop-ups", Icons.Rounded.PhoneAndroid, BadgeColors.Blue) { ui.go(Dest.BLEND) }
                 NavRow("Shape & motion", "Size, corners, springs, split island", Icons.Rounded.Crop169, BadgeColors.Graphite) { ui.go(Dest.ISLAND) }
                 NavRow("Camera calibration", "Auto-detect or fine-tune to the pixel", Icons.Rounded.CenterFocusStrong, BadgeColors.Cyan) { ui.go(Dest.CALIBRATION) }
                 NavRow("Gestures", "Tap, long-press, swipe, haptics", Icons.Rounded.TouchApp, BadgeColors.Blue) { ui.go(Dest.GESTURES) }
@@ -196,7 +199,8 @@ fun HomeScreen(settings: IslandSettings, permissions: PermissionSnapshot, ui: Ui
                 NavRow("Battery", "Low, full and power saving alerts", Icons.Rounded.BatteryFull, BadgeColors.Teal) { ui.go(Dest.BATTERY) }
                 NavRow("Bluetooth", "Earbuds, headphones, watch, car", Icons.Rounded.Bluetooth, BadgeColors.Blue) { ui.go(Dest.BLUETOOTH) }
                 NavRow("Timers & stopwatch", "Local timers that live in the island", Icons.Rounded.Timer, BadgeColors.Orange) { ui.go(Dest.TIMERS) }
-                NavRow("Apps", "Per-app rules, fullscreen, Game Mode", Icons.Rounded.Apps, BadgeColors.Yellow) { ui.go(Dest.APPS) }
+                NavRow("Apps", "Per-app rules, motion, fullscreen, Game Mode", Icons.Rounded.Apps, BadgeColors.Yellow) { ui.go(Dest.APPS) }
+                NavRow("Gallery", "Every activity, live, ready to pin", Icons.Rounded.GridView, BadgeColors.Violet) { ui.go(Dest.GALLERY) }
             }
         }
         item {
@@ -243,7 +247,7 @@ private fun MasterSwitch(enabled: Boolean, canEnable: Boolean, onChange: (Boolea
                 )
             }
             Spacer(Modifier.width(12.dp))
-            Switch(checked = enabled, onCheckedChange = null)
+            OneUiSwitch(checked = enabled, onCheckedChange = null)
         }
     }
 }

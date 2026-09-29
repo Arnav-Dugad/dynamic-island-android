@@ -2,6 +2,7 @@ package com.arnav.island.settings.ui.preview
 
 import android.animation.ValueAnimator
 import android.content.Context
+import android.provider.Settings
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -45,6 +46,7 @@ import com.arnav.island.events.test.TestEvents
 import com.arnav.island.island.IslandController
 import com.arnav.island.island.IslandGeometry
 import com.arnav.island.island.ScreenSpec
+import com.arnav.island.island.render.CustomTheme
 import com.arnav.island.island.render.IslandView
 import com.arnav.island.island.render.RenderContext
 import com.arnav.island.island.render.RenderSettings
@@ -91,9 +93,10 @@ class PreviewIsland(context: Context, graph: AppGraph) {
     fun apply(s: IslandSettings) {
         val geometryChanged = s.geometryConfig() != settings.geometryConfig()
         settings = s
+        val scale = Settings.Global.getFloat(rc.context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f).takeIf { it > 0f } ?: 1f
         rc.settings = RenderSettings(
             theme = s.islandTheme,
-            motion = s.motionProfile(systemReduceMotion = !ValueAnimator.areAnimatorsEnabled()),
+            motion = s.motionProfile(systemReduceMotion = !ValueAnimator.areAnimatorsEnabled(), systemSpeed = 1f / scale.coerceIn(0.25f, 4f)),
             performance = s.performanceMode,
             waveform = s.mediaWaveform,
             compactMediaProgress = s.mediaCompactProgress,
@@ -111,6 +114,7 @@ class PreviewIsland(context: Context, graph: AppGraph) {
             lensGlint = s.lensGlint,
             blurReveal = s.blurReveal,
             tiltDepth = false,
+            custom = CustomTheme(s.customRimColor, s.customGlowColor, s.customHighlight, s.customRimWidthDp),
         )
         controller.updateSettings(s.copy(burnInProtection = false))
         if (geometryChanged && laidOut) layout()

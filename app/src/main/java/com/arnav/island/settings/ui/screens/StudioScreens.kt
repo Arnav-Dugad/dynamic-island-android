@@ -1,12 +1,12 @@
 package com.arnav.island.settings.ui.screens
 
+import android.app.AlarmManager
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.BatteryManager
-import android.app.AlarmManager
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Canvas
@@ -30,20 +30,30 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowForward
 import androidx.compose.material.icons.automirrored.rounded.ShowChart
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.Album
 import androidx.compose.material.icons.rounded.Animation
-import androidx.compose.material.icons.rounded.BatteryChargingFull
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.BlurOn
+import androidx.compose.material.icons.rounded.BubbleChart
 import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material.icons.rounded.DeliveryDining
 import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.Event
 import androidx.compose.material.icons.rounded.Flare
+import androidx.compose.material.icons.rounded.FlashlightOn
 import androidx.compose.material.icons.rounded.Flight
 import androidx.compose.material.icons.rounded.Forum
+import androidx.compose.material.icons.rounded.GraphicEq
+import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.HourglassBottom
 import androidx.compose.material.icons.rounded.Layers
 import androidx.compose.material.icons.rounded.NewReleases
+import androidx.compose.material.icons.rounded.NotificationsPaused
+import androidx.compose.material.icons.rounded.Palette
+import androidx.compose.material.icons.rounded.PanTool
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.QrCode2
 import androidx.compose.material.icons.rounded.ScreenRotation
@@ -52,6 +62,7 @@ import androidx.compose.material.icons.rounded.Straighten
 import androidx.compose.material.icons.rounded.SwipeLeft
 import androidx.compose.material.icons.rounded.SystemUpdate
 import androidx.compose.material.icons.rounded.Terminal
+import androidx.compose.material.icons.rounded.Timelapse
 import androidx.compose.material.icons.rounded.Today
 import androidx.compose.material.icons.rounded.Usb
 import androidx.compose.material.icons.rounded.ViewAgenda
@@ -76,6 +87,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -360,7 +372,31 @@ fun MotionDetailsGroup(s: IslandSettings, ui: Ui) {
 // What's new
 // -------------------------------------------------------------------------------------------------
 
-private class Feature(val title: String, val body: String, val icon: ImageVector, val color: Color, val play: suspend (PreviewIsland) -> Unit)
+private class Feature(
+    val title: String,
+    val body: String,
+    val icon: ImageVector,
+    val color: Color,
+    /** A screen to open instead of a preview demo. */
+    val opens: Dest? = null,
+    val play: suspend (PreviewIsland) -> Unit = {},
+)
+
+private class Release(val version: String, val tagline: String, val features: List<Feature>)
+
+/** A long-press, a little drag and a flick, played on the preview to show grab and flick. */
+private suspend fun grabDemo(p: PreviewIsland) {
+    val scene = p.view.scene
+    scene.grab()
+    val path = listOf(0f to 0f, 18f to 6f, 34f to 14f, 40f to 18f, 20f to 8f, -16f to -4f, -30f to -8f)
+    for ((dx, dy) in path) {
+        scene.grabMove(dx * p.rc.density, dy * p.rc.density)
+        p.view.requestFrame()
+        delay(90)
+    }
+    scene.releaseGrab(900f * p.rc.density, 260f * p.rc.density)
+    p.view.requestFrame()
+}
 
 @Composable
 fun WhatsNewScreen(s: IslandSettings, ui: Ui) {
@@ -369,94 +405,191 @@ fun WhatsNewScreen(s: IslandSettings, ui: Ui) {
     val scope = rememberCoroutineScope()
     var playing by remember { mutableStateOf<String?>(null) }
 
-    val features = remember {
+    val releases = remember {
         listOf(
-            Feature("Icon flight", "New notifications fly in from the status bar along a spring arc, then open into the banner.", Icons.Rounded.Flight, BadgeColors.Blue) { p ->
-                p.tests.notification()
-            },
-            Feature("Album art in motion", "Artwork glides between the pill and the card, with a soft glow in its colours. Up next, output device and a volume slider live in the card.", Icons.Rounded.Album, BadgeColors.Pink) { p ->
-                p.tests.music(true)
-                delay(1_200)
-                p.controller.expand("test:media")
-                delay(3_800)
-                p.controller.collapse()
-            },
-            Feature("Group chats & quick reply", "Several people in one chat show as stacked avatars. Reply right from the island using the app's own reply action.", Icons.Rounded.Forum, BadgeColors.Green) { p ->
-                p.tests.groupChat(testReplyAction(context) { p.engine.remove("test:group") })
-                delay(900)
-                p.controller.expand("test:group")
-            },
-            Feature("Stack peek", "Pull an open card further down to see every running activity at once.", Icons.Rounded.ViewAgenda, BadgeColors.Indigo) { p ->
-                p.tests.music(true, rich = false)
-                p.tests.timer(4)
-                delay(1_000)
-                p.controller.showStack()
-                delay(3_600)
-                p.controller.collapse()
-            },
-            Feature("Glance", "Long-press the empty island for the date, battery, next alarm and what's playing.", Icons.Rounded.Today, BadgeColors.Cyan) { p ->
-                p.tests.glance(realGlance(context))
-            },
-            Feature("Final countdown", "Timers pulse and warm to red in the last ten seconds, with a haptic tick each second. Digits roll like an odometer.", Icons.Rounded.HourglassBottom, BadgeColors.Orange) { p ->
-                p.tests.finalCountdown()
-            },
-            Feature("Charging graph", "The charging card draws live charging power, and says exactly where charging paused.", Icons.AutoMirrored.Rounded.ShowChart, BadgeColors.Green) { p ->
-                p.tests.chargingGraph(s.chargingTheme)
-                delay(900)
-                p.controller.expand("test:charging")
-                delay(3_600)
-                p.controller.collapse()
-                p.engine.remove("test:charging")
-            },
-            Feature("Throw to dismiss", "Fling a banner sideways and it flies off with the speed of your swipe.", Icons.Rounded.SwipeLeft, BadgeColors.Red) { p ->
-                p.tests.notification()
-                delay(1_600)
-                p.engine.current().toast?.let { p.controller.dismiss(it, throwVelocity = 4_200f) }
-            },
-            Feature("Arrival pulse & lens glint", "Events arrive with a ring of colour around the camera; cards catch a glint as they open.", Icons.Rounded.Flare, BadgeColors.Yellow) { p ->
-                p.tests.ringer()
-                delay(2_400)
-                p.tests.bluetooth()
-            },
+            Release("1.2", "Blends into One UI", listOf(
+                Feature("Seamless status bar", "While a card is open the clock and system icons step aside, then come back as it closes.", Icons.Rounded.Layers, BadgeColors.Blue, opens = Dest.BLEND),
+                Feature("No more double pop-ups", "Island can take over from One UI's pop-up banners while it's on screen.", Icons.Rounded.NotificationsPaused, BadgeColors.Pink, opens = Dest.BLEND),
+                Feature("Deliveries & rides", "Swiggy, Zomato, Uber, Blinkit and Android 16 Live Updates: a route with the courier gliding along it.", Icons.Rounded.DeliveryDining, BadgeColors.Orange) { p ->
+                    p.tests.delivery()
+                    delay(1_500)
+                    p.controller.expand("test:live")
+                },
+                Feature("Next meeting", "A countdown before events in your calendars, with a Join button for video calls.", Icons.Rounded.Event, BadgeColors.Blue) { p ->
+                    p.tests.meeting(5)
+                    delay(1_200)
+                    p.controller.expand("test:calendar")
+                },
+                Feature("Flashlight", "The torch glows in the pill, with a brightness slider in the card.", Icons.Rounded.FlashlightOn, BadgeColors.Yellow) { p ->
+                    p.tests.torch()
+                    delay(1_200)
+                    p.controller.expand("test:torch")
+                },
+                Feature("Grab and flick", "Long-press an open card: it lifts, follows your finger and springs home when you let go.", Icons.Rounded.PanTool, BadgeColors.Violet) { p ->
+                    p.tests.music(true, rich = false)
+                    delay(900)
+                    p.controller.expand("test:media")
+                    delay(1_200)
+                    grabDemo(p)
+                },
+                Feature("Waveform morph", "Pause and the equalizer flows round into a progress ring; play and it becomes bars again.", Icons.Rounded.GraphicEq, BadgeColors.Pink) { p ->
+                    p.tests.music(true, rich = false)
+                    delay(1_400)
+                    p.tests.music(false, rich = false)
+                    delay(2_200)
+                    p.tests.music(true, rich = false)
+                },
+                Feature("Liquid split", "A second activity grows out of the pill as a droplet and pinches off with surface tension.", Icons.Rounded.BubbleChart, BadgeColors.Indigo) { p ->
+                    p.tests.split()
+                },
+                Feature("Stopwatch laps", "A dial with a tick for every lap, and a ripple when you take one.", Icons.Rounded.Timelapse, BadgeColors.Orange) { p ->
+                    p.tests.laps()
+                },
+                Feature("Reply sent", "After a quick reply the island shows it going out, then a check.", Icons.Rounded.Forum, BadgeColors.Teal) { p ->
+                    p.tests.sent()
+                },
+                Feature("Unlock bloom", "A ring in your wallpaper's accent colour greets you when you unlock.", Icons.Rounded.AutoAwesome, BadgeColors.Violet) { p ->
+                    p.view.scene.unlockBloom()
+                    p.view.requestFrame()
+                },
+                Feature("Your own theme", "Pick the rim, glow and highlight in Appearance.", Icons.Rounded.Palette, BadgeColors.Cyan, opens = Dest.APPEARANCE),
+                Feature("Gallery", "Every kind of activity, live, ready to pin to the island.", Icons.Rounded.GridView, BadgeColors.Violet, opens = Dest.GALLERY),
+            )),
+            Release("1.1", "Motion and quick reply", listOf(
+                Feature("Icon flight", "New notifications fly in from the status bar along a spring arc, then open into the banner.", Icons.Rounded.Flight, BadgeColors.Blue) { p ->
+                    p.tests.notification()
+                },
+                Feature("Album art in motion", "Artwork glides between the pill and the card, with a soft glow in its colours. Up next, output device and a volume slider live in the card.", Icons.Rounded.Album, BadgeColors.Pink) { p ->
+                    p.tests.music(true)
+                    delay(1_200)
+                    p.controller.expand("test:media")
+                    delay(3_800)
+                    p.controller.collapse()
+                },
+                Feature("Group chats & quick reply", "Several people in one chat show as stacked avatars. Reply right from the island using the app's own reply action.", Icons.Rounded.Forum, BadgeColors.Green) { p ->
+                    p.tests.groupChat(testReplyAction(context) { p.engine.remove("test:group") })
+                    delay(900)
+                    p.controller.expand("test:group")
+                },
+                Feature("Stack peek", "Pull an open card further down to see every running activity at once.", Icons.Rounded.ViewAgenda, BadgeColors.Indigo) { p ->
+                    p.tests.music(true, rich = false)
+                    p.tests.timer(4)
+                    delay(1_000)
+                    p.controller.showStack()
+                    delay(3_600)
+                    p.controller.collapse()
+                },
+                Feature("Glance", "Long-press the empty island for the date, battery, next alarm and what's playing.", Icons.Rounded.Today, BadgeColors.Cyan) { p ->
+                    p.tests.glance(realGlance(context))
+                },
+                Feature("Final countdown", "Timers pulse and warm to red in the last ten seconds, with a haptic tick each second. Digits roll like an odometer.", Icons.Rounded.HourglassBottom, BadgeColors.Orange) { p ->
+                    p.tests.finalCountdown()
+                },
+                Feature("Charging graph", "The charging card draws live charging power, and says exactly where charging paused.", Icons.AutoMirrored.Rounded.ShowChart, BadgeColors.Green) { p ->
+                    p.tests.chargingGraph(s.chargingTheme)
+                    delay(900)
+                    p.controller.expand("test:charging")
+                    delay(3_600)
+                    p.controller.collapse()
+                    p.engine.remove("test:charging")
+                },
+                Feature("Throw to dismiss", "Fling a banner sideways and it flies off with the speed of your swipe.", Icons.Rounded.SwipeLeft, BadgeColors.Red) { p ->
+                    p.tests.notification()
+                    delay(1_600)
+                    p.engine.current().toast?.let { p.controller.dismiss(it, throwVelocity = 4_200f) }
+                },
+                Feature("Arrival pulse & lens glint", "Events arrive with a ring of colour around the camera; cards catch a glint as they open.", Icons.Rounded.Flare, BadgeColors.Yellow) { p ->
+                    p.tests.ringer()
+                    delay(2_400)
+                    p.tests.bluetooth()
+                },
+                Feature("Island Studio", "Drag the edges of a blueprint and the real island resizes live.", Icons.Rounded.Straighten, BadgeColors.Cyan, opens = Dest.STUDIO),
+            )),
+            Release("1.0", "The island", listOf(
+                Feature("Live activities", "Music, timers, calls, charging, Bluetooth and notifications around your camera.", Icons.Rounded.Layers, BadgeColors.Indigo) { p ->
+                    p.tests.music(true, rich = false)
+                    delay(2_600)
+                    p.tests.charging(s.chargingTheme)
+                },
+                Feature("Split island", "Two activities side by side.", Icons.Rounded.Layers, BadgeColors.Indigo) { p ->
+                    p.tests.split()
+                },
+            )),
         )
     }
 
-    SettingsPage("What's new in ${BuildConfig.VERSION_NAME.substringBefore('-')}", onBack = ui::back) {
-        item {
-            IslandPreview(ui.graph, s, Modifier.fillMaxWidth().height(350.dp).padding(vertical = 4.dp), onReady = { preview = it })
+    fun run(f: Feature) {
+        f.opens?.let {
+            ui.go(it)
+            return
         }
-        item {
-            Text(
-                "Tap play to see each feature on the live preview. It's the same renderer as the real island.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
-            )
+        val p = preview ?: return
+        scope.launch {
+            playing = f.title
+            p.tests.clear()
+            p.controller.collapse()
+            delay(300)
+            f.play(p)
+            delay(2_000)
+            if (playing == f.title) playing = null
         }
-        features.forEach { f ->
-            item {
-                FeatureCard(f, playing == f.title) {
-                    val p = preview ?: return@FeatureCard
-                    scope.launch {
-                        playing = f.title
-                        p.tests.clear()
-                        p.controller.collapse()
-                        delay(300)
-                        f.play(p)
-                        delay(2_000)
-                        if (playing == f.title) playing = null
+    }
+
+    SettingsPage("What's new", onBack = ui::back) {
+        stickyHeader(key = "preview") {
+            Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background)) {
+                IslandPreview(ui.graph, s, Modifier.fillMaxWidth().height(340.dp).padding(vertical = 4.dp), onReady = { preview = it })
+                Text(
+                    "Tap a feature to play it on the live preview. It's the same renderer as the real island.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                )
+            }
+        }
+        releases.forEachIndexed { index, release ->
+            item(key = "v${release.version}") { VersionHeader(release, latest = index == 0) }
+            release.features.forEachIndexed { i, f ->
+                item(key = "v${release.version}-$i") {
+                    TimelineRail(last = index == releases.lastIndex && i == release.features.lastIndex) {
+                        FeatureCard(f, playing == f.title) { run(f) }
                     }
                 }
             }
         }
-        item {
-            Group(title = "Also new") {
-                NavRow("Island Studio", "Drag the real island's edges", Icons.Rounded.Straighten, BadgeColors.Cyan) { ui.go(Dest.STUDIO) }
-                NavRow("Motion lab & details", "See the springs, pick each effect", Icons.Rounded.Animation, BadgeColors.Pink) { ui.go(Dest.ISLAND) }
-                NavRow("Share with friends", "QR code, install guide, Lite edition", Icons.Rounded.QrCode2, BadgeColors.Violet) { ui.go(Dest.SHARE) }
-                NavRow("Status bar cleanup", "Hide icons the island already shows", Icons.Rounded.VisibilityOff, BadgeColors.Graphite) { ui.go(Dest.STATUS_BAR) }
-            }
+    }
+}
+
+/** A dot on the timeline with the version and its theme. */
+@Composable
+private fun VersionHeader(release: Release, latest: Boolean) {
+    val accent = if (latest) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
+    Row(Modifier.fillMaxWidth().padding(top = 18.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.width(24.dp), contentAlignment = Alignment.Center) {
+            Box(Modifier.size(14.dp).clip(CircleShape).background(accent))
         }
+        Spacer(Modifier.width(10.dp))
+        Column {
+            Text("Island ${release.version}", style = MaterialTheme.typography.titleLarge)
+            Text(if (latest) "${release.tagline} · this version" else release.tagline, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+/** Indents a card under its version with the timeline's line running down the left. */
+@Composable
+private fun TimelineRail(last: Boolean, content: @Composable () -> Unit) {
+    val line = MaterialTheme.colorScheme.outlineVariant
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .drawBehind {
+                val x = 12.dp.toPx()
+                drawLine(line, Offset(x, 0f), Offset(x, if (last) size.height / 2f else size.height), strokeWidth = 2.dp.toPx())
+            },
+    ) {
+        Spacer(Modifier.width(34.dp))
+        Box(Modifier.weight(1f)) { content() }
     }
 }
 
@@ -482,7 +615,10 @@ private fun FeatureCard(f: Feature, playing: Boolean, onPlay: () -> Unit) {
                 Text(f.body, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Spacer(Modifier.width(10.dp))
-            FilledTonalIconButton(onClick = onPlay) { Icon(Icons.Rounded.PlayArrow, "Play ${f.title}") }
+            FilledTonalIconButton(onClick = onPlay) {
+                if (f.opens != null) Icon(Icons.AutoMirrored.Rounded.ArrowForward, "Open ${f.title}")
+                else Icon(Icons.Rounded.PlayArrow, "Play ${f.title}")
+            }
         }
     }
 }
@@ -542,6 +678,7 @@ fun ShareScreen(ui: Ui) {
                 }
             }
         }
+        item { SetupShareGroup(ui) }
         item {
             Group(title = "Which file to download", footer = "Both editions are the same app with the same signature, so either one updates the other and keeps its settings.") {
                 SettingRow("Island Lite (easiest)", "Island-Lite-v….apk · installs straight from the browser. Charging, battery, Bluetooth, timers, system events, Glance.", Icons.Rounded.Download, BadgeColors.Green)
@@ -577,7 +714,7 @@ private fun Step(n: Int, text: String) {
 }
 
 @Composable
-private fun CommandRow(context: Context, command: String) {
+fun CommandRow(context: Context, command: String) {
     var copied by remember { mutableStateOf(false) }
     LaunchedEffect(copied) {
         if (copied) {

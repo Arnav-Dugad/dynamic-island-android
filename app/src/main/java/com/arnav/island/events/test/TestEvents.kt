@@ -11,10 +11,12 @@ import androidx.core.graphics.createBitmap
 import com.arnav.island.events.ActionStyle
 import com.arnav.island.events.BluetoothDeviceKind
 import com.arnav.island.events.BluetoothPayload
+import com.arnav.island.events.CalendarPayload
 import com.arnav.island.events.CallPayload
 import com.arnav.island.events.CallState
 import com.arnav.island.events.ChargingPayload
 import com.arnav.island.events.ChargingTheme
+import com.arnav.island.events.ConfirmPayload
 import com.arnav.island.events.CustomPayload
 import com.arnav.island.events.EntranceAnimation
 import com.arnav.island.events.EventColors
@@ -25,6 +27,7 @@ import com.arnav.island.events.GlancePayload
 import com.arnav.island.events.Glyph
 import com.arnav.island.events.IslandAction
 import com.arnav.island.events.IslandEvent
+import com.arnav.island.events.LiveUpdatePayload
 import com.arnav.island.events.MediaPayload
 import com.arnav.island.events.NotificationPayload
 import com.arnav.island.events.NotificationPrivacy
@@ -36,9 +39,12 @@ import com.arnav.island.events.StopwatchPayload
 import com.arnav.island.events.SystemKind
 import com.arnav.island.events.SystemPayload
 import com.arnav.island.events.TimerPayload
+import com.arnav.island.events.TorchPayload
+import com.arnav.island.island.render.presenters.CalendarPresenter
 import com.arnav.island.island.render.presenters.CallPresenter
 import com.arnav.island.island.render.presenters.MediaPresenter
 import com.arnav.island.island.render.presenters.TimerPresenter
+import com.arnav.island.island.render.presenters.TorchPresenter
 import com.arnav.island.util.Bitmaps
 import com.arnav.island.util.ColorExtractor
 import com.arnav.island.util.ImageStore
@@ -46,6 +52,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 
 /**
  * Developer test events. Every one is clearly marked as a test in its text and uses source TEST,
@@ -55,6 +62,9 @@ import kotlinx.coroutines.launch
 class TestEvents(private val engine: EventEngine, private val images: ImageStore, private val scope: CoroutineScope) {
 
     private var progressJob: Job? = null
+    private var liveJob: Job? = null
+    private var lapJob: Job? = null
+    private var torchLevel = 3
     private val artwork: Bitmap by lazy { testArtwork() }
     private val artAccent: Int by lazy { ColorExtractor.accentFrom(Bitmaps.samplePixels(artwork)) }
     private var mediaPlaying = true
@@ -238,6 +248,126 @@ class TestEvents(private val engine: EventEngine, private val images: ImageStore
         )
     )
 
+    /** A test delivery that rides along its route and arrives. */
+    fun delivery() {
+        liveJob?.cancel()
+        liveJob = scope.launch {
+            var p = 0.12f
+            while (p < 1f) {
+                val minutes = ((1f - p) * 16).roundToInt().coerceAtLeast(1)
+                engine.post(
+                    IslandEvent(
+                        id = "test:live",
+                        source = EventSource.TEST,
+                        type = EventType.LIVE_UPDATE,
+                        timestamp = System.currentTimeMillis(),
+                        persistent = true,
+                        title = "Test order",
+                        subtitle = "$minutes min",
+                        icon = Glyph.SCOOTER,
+                        colors = EventColors(accent = 0xFFFF7A45.toInt()),
+                        contentKey = "live",
+                        payload = LiveUpdatePayload(
+                            appLabel = "Island", packageName = "test", title = "Test order is on the way",
+                            text = "Test courier · 2 items", shortText = "$minutes min", progress = p,
+                            points = listOf(0f, 0.34f, 1f),
+                            segments = listOf(0.34f to 0xFFFFA23A.toInt(), 0.66f to 0xFF3DDC84.toInt()),
+                            vehicle = Glyph.SCOOTER,
+                        ),
+                    )
+                )
+                delay(1_300)
+                p += 0.07f
+            }
+            engine.remove("test:live")
+            sent("Delivered", "Test order")
+        }
+    }
+
+    /** A test meeting that starts in [minutes]. */
+    fun meeting(minutes: Int = 5) {
+        val now = System.currentTimeMillis()
+        val start = now + minutes * 60_000L
+        engine.post(
+            IslandEvent(
+                id = "test:calendar",
+                source = EventSource.TEST,
+                type = EventType.CALENDAR,
+                timestamp = now,
+                persistent = true,
+                title = "Test meeting",
+                icon = Glyph.CALENDAR,
+                colors = EventColors(accent = 0xFF6D8BFF.toInt()),
+                actions = listOf(IslandAction(CalendarPresenter.ACTION_OPEN, "Open", Glyph.CALENDAR, collapses = true) {}),
+                animation = EntranceAnimation.BLOOM,
+                payload = CalendarPayload("Test meeting", start, start + 30 * 60_000L, "Test room", 0xFF6D8BFF.toInt(), hasJoinLink = false),
+            )
+        )
+    }
+
+    /** A test flashlight with five brightness steps (the real one follows the camera's range). */
+    fun torch() {
+        engine.post(
+            IslandEvent(
+                id = "test:torch",
+                source = EventSource.TEST,
+                type = EventType.TORCH,
+                timestamp = System.currentTimeMillis(),
+                persistent = true,
+                title = "Flashlight (test)",
+                icon = Glyph.FLASHLIGHT,
+                actions = listOf(IslandAction(TorchPresenter.ACTION_OFF, "Turn off", Glyph.CLOSE, collapses = true) { engine.remove("test:torch") }),
+                animation = EntranceAnimation.POP,
+                contentKey = "torch",
+                payload = TorchPayload(torchLevel, 5, SeekAction { f ->
+                    torchLevel = (f * 5).roundToInt().coerceIn(1, 5)
+                    torch()
+                }),
+            )
+        )
+    }
+
+    /** The confirmation pill: dots, then a check. */
+    fun sent(label: String = "Sent", detail: String = "Test reply") = engine.post(
+        IslandEvent(
+            id = "test:confirm",
+            source = EventSource.TEST,
+            type = EventType.CONFIRM,
+            timestamp = System.currentTimeMillis(),
+            persistent = false,
+            durationMs = 2_200,
+            title = label,
+            animation = EntranceAnimation.POP,
+            payload = ConfirmPayload(label, detail),
+        )
+    )
+
+    /** A running test stopwatch that takes a lap every couple of seconds. */
+    fun laps() {
+        lapJob?.cancel()
+        val start = System.currentTimeMillis() - 7_000
+        lapJob = scope.launch {
+            val laps = ArrayList<Long>()
+            repeat(5) {
+                engine.post(stopwatchEvent(start, laps.toList()))
+                delay(2_300)
+                laps += System.currentTimeMillis() - start
+            }
+            engine.post(stopwatchEvent(start, laps.toList()))
+        }
+    }
+
+    private fun stopwatchEvent(start: Long, laps: List<Long>) = IslandEvent(
+        id = "test:stopwatch",
+        source = EventSource.TEST,
+        type = EventType.STOPWATCH,
+        timestamp = System.currentTimeMillis(),
+        persistent = true,
+        title = "Stopwatch",
+        contentKey = "laps",
+        payload = StopwatchPayload(start, 0, isRunning = true, laps = laps),
+    )
+
     fun bluetooth(connected: Boolean = true) = engine.post(
         IslandEvent(
             id = "test:bluetooth",
@@ -406,6 +536,8 @@ class TestEvents(private val engine: EventEngine, private val images: ImageStore
 
     fun clear() {
         progressJob?.cancel()
+        liveJob?.cancel()
+        lapJob?.cancel()
         engine.removeWhere { it.source == EventSource.TEST }
     }
 

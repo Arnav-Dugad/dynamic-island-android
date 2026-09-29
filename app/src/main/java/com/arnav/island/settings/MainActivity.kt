@@ -21,16 +21,19 @@ import kotlinx.coroutines.flow.MutableStateFlow
 class MainActivity : ComponentActivity() {
 
     private val destination = MutableStateFlow<Dest?>(null)
+    private val sharedSetup = MutableStateFlow<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         destination.value = intent.destination()
+        sharedSetup.value = intent.setupCode()
         val graph = (application as IslandApp).graph
 
         setContent {
             val settings by graph.settings.state.collectAsStateWithLifecycle()
             val initial by destination.collectAsStateWithLifecycle()
+            val setup by sharedSetup.collectAsStateWithLifecycle()
             IslandTheme(settings.appTheme, settings.amoledBlack, settings.dynamicColor) {
                 // System bar icons follow the app theme (which may differ from the system's).
                 val dark = LocalIslandColors.current.isDark
@@ -41,7 +44,7 @@ class MainActivity : ComponentActivity() {
                     }
                 }
                 Surface(color = MaterialTheme.colorScheme.background) {
-                    IslandRoot(graph, initial)
+                    IslandRoot(graph, initial, setup) { sharedSetup.value = null }
                 }
             }
         }
@@ -51,7 +54,12 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         destination.value = intent.destination()
+        sharedSetup.value = intent.setupCode()
     }
+
+    /** island://setup/<code> from a friend's QR code or message. */
+    private fun Intent.setupCode(): String? =
+        data?.takeIf { it.scheme == "island" && it.host == "setup" }?.lastPathSegment?.takeIf { it.isNotBlank() }
 
     private fun Intent.destination(): Dest? = when (getStringExtra(EXTRA_DESTINATION)) {
         "timers" -> Dest.TIMERS
@@ -60,6 +68,9 @@ class MainActivity : ComponentActivity() {
         "studio" -> Dest.STUDIO
         "whats_new" -> Dest.WHATS_NEW
         "share" -> Dest.SHARE
+        "blend" -> Dest.BLEND
+        "gallery" -> Dest.GALLERY
+        "diagnostics" -> Dest.DIAGNOSTICS
         else -> null
     }
 

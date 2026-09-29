@@ -11,7 +11,9 @@ import com.arnav.island.events.BatteryAlert
 import com.arnav.island.events.BatteryPayload
 import com.arnav.island.events.ChargingPayload
 import com.arnav.island.events.ChargingSpeed
+import com.arnav.island.events.CustomPayload
 import com.arnav.island.events.EntranceAnimation
+import com.arnav.island.events.EventColors
 import com.arnav.island.events.EventEngine
 import com.arnav.island.events.EventSource
 import com.arnav.island.events.EventType
@@ -60,6 +62,7 @@ class BatteryMonitor(
     private var speed: ChargingSpeed? = null
     private var lowAnnounced = false
     private var fullAnnounced = false
+    private var coachAnnounced = false
     private var lastConnectAt = 0L
     private var registered = false
 
@@ -92,6 +95,8 @@ class BatteryMonitor(
         last = sticky?.let(::parse)
         if (last?.isPlugged == true) {
             fullAnnounced = last?.isFull == true
+            // Already past the limit when Island starts: don't nag straight away.
+            coachAnnounced = (last?.level ?: 0) >= settings().chargeLimit
             recordPower()
         }
     }
@@ -155,6 +160,13 @@ class BatteryMonitor(
             fullAnnounced = true
             postAlert(BatteryAlert.FULL, snap)
         }
+
+        // Charge limit coach: a gentle nudge once, only while the phone is still actually charging
+        // past the limit (One UI's own battery protection pauses charging, so it stays quiet then).
+        if (s.chargeCoach && snap.isPlugged && snap.status == BatteryManager.BATTERY_STATUS_CHARGING && snap.level >= s.chargeLimit && !coachAnnounced) {
+            coachAnnounced = true
+            postCoach(snap)
+        }
     }
 
     private fun onConnected() {
@@ -181,6 +193,7 @@ class BatteryMonitor(
         powerHistory.clear()
         speed = null
         fullAnnounced = false
+        coachAnnounced = false
         engine.remove(ID_TOAST)
         engine.remove(ID_LIVE)
     }
@@ -293,6 +306,25 @@ class BatteryMonitor(
                 }
             }
         }
+    }
+
+    private fun postCoach(snap: Snapshot) {
+        engine.post(
+            IslandEvent(
+                id = "battery:coach",
+                source = EventSource.BATTERY,
+                type = EventType.CUSTOM,
+                timestamp = System.currentTimeMillis(),
+                persistent = false,
+                durationMs = 5_000,
+                title = "${snap.level}% charged",
+                subtitle = "Unplug now to go easy on the battery",
+                icon = Glyph.LEAF,
+                colors = EventColors(accent = 0xFF3DDC84.toInt()),
+                animation = EntranceAnimation.POP,
+                payload = CustomPayload("Battery", null),
+            )
+        )
     }
 
     /**
