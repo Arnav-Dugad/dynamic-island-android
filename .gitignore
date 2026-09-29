@@ -1,0 +1,30 @@
+# Build output
+/build
+/app/build
+/captures
+.externalNativeBuild
+.cxx
+*.apk
+*.aab
+!/docs/**/*.apk
+
+# Gradle / Kotlin
+.gradle/
+.kotlin/
+
+# Local machine configuration
+local.properties
+*.iml
+.idea/
+.DS_Store
+
+# Signing material
+*.jks
+*.keystore
+keystore.properties
+
+# Local agent tooling (machine-specific paths)
+.agentrelay/
+.codex/
+.mcp.json
+.claude/

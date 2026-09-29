@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="island_black">#FF000000</color>
+    <color name="launcher_background">#FF050506</color>
+    <color name="notification_accent">#FF7CF7FF</color>
+</resources>

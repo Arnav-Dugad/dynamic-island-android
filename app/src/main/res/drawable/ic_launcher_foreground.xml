@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Original artwork: an OLED-black pill with a luminous rim, a camera lens and a tiny equalizer. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Soft glow under the pill -->
+    <path android:pathData="M36,43h36a11,11 0,0 1,0 22h-36a11,11 0,0 1,0 -22z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:centerX="54"
+                android:centerY="56"
+                android:gradientRadius="30"
+                android:type="radial">
+                <item android:color="#557CF7FF" android:offset="0" />
+                <item android:color="#00000000" android:offset="1" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- The pill -->
+    <path
+        android:fillColor="#FF000000"
+        android:pathData="M36.5,44.5h35a9.5,9.5 0,0 1,0 19h-35a9.5,9.5 0,0 1,0 -19z"
+        android:strokeWidth="1.4">
+        <aapt:attr name="android:strokeColor">
+            <gradient
+                android:endX="81"
+                android:endY="54"
+                android:startX="27"
+                android:startY="54"
+                android:type="linear">
+                <item android:color="#FF7CF7FF" android:offset="0" />
+                <item android:color="#FF9D8CFF" android:offset="0.55" />
+                <item android:color="#FFFF8CC6" android:offset="1" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Equalizer bars -->
+    <path android:fillColor="#FFFFFFFF" android:pathData="M34.2,51.6a0.9,0.9 0,0 1,1.8 0v4.8a0.9,0.9 0,0 1,-1.8 0z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M37.6,49.4a0.9,0.9 0,0 1,1.8 0v9.2a0.9,0.9 0,0 1,-1.8 0z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M41,50.8a0.9,0.9 0,0 1,1.8 0v6.4a0.9,0.9 0,0 1,-1.8 0z" />
+
+    <!-- Camera lens -->
+    <path
+        android:fillColor="#FF14161C"
+        android:pathData="M69.5,54m-4.2,0a4.2,4.2 0,1 1,8.4 0a4.2,4.2 0,1 1,-8.4 0" />
+    <path
+        android:fillColor="#FF26324A"
+        android:pathData="M69.5,54m-2.2,0a2.2,2.2 0,1 1,4.4 0a2.2,2.2 0,1 1,-4.4 0" />
+    <path
+        android:fillColor="#AAFFFFFF"
+        android:pathData="M68.6,53.1m-0.7,0a0.7,0.7 0,1 1,1.4 0a0.7,0.7 0,1 1,-1.4 0" />
+</vector>

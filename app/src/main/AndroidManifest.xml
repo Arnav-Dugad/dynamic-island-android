@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!--
+        Island asks for the minimum it needs. Nothing here grants network access: there is no
+        INTERNET permission, so no data can leave the device.
+    -->
+
+    <!-- Core: draw the island over other apps (user-granted special access). -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <!-- Keep the user-enabled overlay alive; specialUse type on Android 14+. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <!-- Restore the island after reboot if the user enabled "Start on boot". -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- Timer-finished alerts (runtime permission, optional). -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Precise timer completion (user-grantable, optional; falls back to inexact alarms). -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <!-- Bluetooth connection toasts (runtime "Nearby devices", optional, asked only if enabled). -->
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission
+        android:name="android.permission.BLUETOOTH"
+        android:maxSdkVersion="30" />
+    <!-- Per-app rules / Game Mode: which app is in front (user-granted Usage Access, optional). -->
+    <uses-permission
+        android:name="android.permission.PACKAGE_USAGE_STATS"
+        tools:ignore="ProtectedPermissions" />
+    <!-- Android 15+: official screen recording detection (install-time, no prompt). -->
+    <uses-permission android:name="android.permission.DETECT_SCREEN_RECORDING" />
+
+    <!--
+        Local API: apps must be granted this permission by the user before they can post live
+        activities to Island (see README "Local API").
+    -->
+    <permission
+        android:name="com.arnav.island.permission.POST_ISLAND_ACTIVITY"
+        android:description="@string/api_permission_description"
+        android:label="@string/api_permission_label"
+        android:protectionLevel="dangerous" />
+
+    <!-- Package visibility limited to launchable apps and media players (no QUERY_ALL_PACKAGES). -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+        <intent>
+            <action android:name="android.media.browse.MediaBrowserService" />
+        </intent>
+    </queries>
+
+    <application
+        android:name=".IslandApp"
+        android:allowBackup="false"
+        android:enableOnBackInvokedCallback="true"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.Island"
+        tools:targetApi="36">
+
+        <activity
+            android:name=".settings.MainActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <service
+            android:name=".overlay.IslandOverlayService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Hosts the user-enabled overlay around the display cutout that shows live activities such as media, timers, calls and charging." />
+        </service>
+
+        <service
+            android:name=".events.notification.IslandNotificationListener"
+            android:exported="true"
+            android:label="@string/listener_label"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.service.notification.default_filter_types"
+                android:value="conversations|alerting|ongoing|silent" />
+        </service>
+
+        <receiver
+            android:name=".overlay.BootReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+
+        <receiver
+            android:name=".events.timer.TimerAlarmReceiver"
+            android:exported="false" />
+
+        <receiver
+            android:name=".events.timer.TimerActionReceiver"
+            android:exported="false" />
+
+        <receiver
+            android:name=".events.api.IslandApiReceiver"
+            android:exported="true"
+            android:permission="com.arnav.island.permission.POST_ISLAND_ACTIVITY">
+            <intent-filter>
+                <action android:name="com.arnav.island.action.SHOW_ACTIVITY" />
+                <action android:name="com.arnav.island.action.DISMISS_ACTIVITY" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>

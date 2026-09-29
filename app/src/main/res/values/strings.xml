@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Island</string>
+
+    <!-- Foreground service -->
+    <string name="channel_service_name">Island service</string>
+    <string name="channel_service_desc">Keeps the island running. This notification is silent and can be hidden from system settings.</string>
+    <string name="service_notification_title">Island is active</string>
+    <string name="service_notification_text">Tap to open settings</string>
+    <string name="service_action_pause">Pause</string>
+
+    <!-- Timers -->
+    <string name="channel_timer_name">Timers</string>
+    <string name="channel_timer_desc">Alerts when a timer finishes.</string>
+    <string name="timer_done_title">Timer finished</string>
+    <string name="timer_action_stop">Stop</string>
+    <string name="timer_action_add_minute">+1 min</string>
+
+    <!-- Notification listener -->
+    <string name="listener_label">Island notifications</string>
+
+    <!-- Local API permission -->
+    <string name="api_permission_label">show live activities in Island</string>
+    <string name="api_permission_description">Allows the app to show and update its own live activities in the Island overlay.</string>
+</resources>

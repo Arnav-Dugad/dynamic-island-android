@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+        The Compose UI draws everything itself; the platform theme only needs to provide a black,
+        edge-to-edge window so launch and configuration changes never flash white on AMOLED.
+    -->
+    <style name="Theme.Island" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/island_black</item>
+        <item name="android:colorBackground">@color/island_black</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLayoutInDisplayCutoutMode">always</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+    </style>
+</resources>
