@@ -128,6 +128,18 @@ class SettingsRepository(private val context: Context, private val scope: Corout
         val animationIntensity = floatPreferencesKey("animation_intensity")
         val customResponse = floatPreferencesKey("custom_response")
         val customDamping = floatPreferencesKey("custom_damping")
+        val squashStretch = booleanPreferencesKey("squash_stretch")
+        val iconFlight = booleanPreferencesKey("icon_flight")
+        val arrivalPulse = booleanPreferencesKey("arrival_pulse")
+        val lensGlint = booleanPreferencesKey("lens_glint")
+        val blurReveal = booleanPreferencesKey("blur_reveal")
+        val tiltDepth = booleanPreferencesKey("tilt_depth")
+        val soundEffects = booleanPreferencesKey("sound_effects")
+        val glance = booleanPreferencesKey("glance_enabled")
+        val statusBarCleanup = booleanPreferencesKey("status_bar_cleanup")
+        val statusBarIcons = stringPreferencesKey("status_bar_icons")
+        val statusBarBackup = stringPreferencesKey("status_bar_backup")
+        val lastSeenVersion = intPreferencesKey("last_seen_version")
 
         val haptics = booleanPreferencesKey("haptics")
         val tapAction = stringPreferencesKey("tap_action")
@@ -229,6 +241,18 @@ class SettingsRepository(private val context: Context, private val scope: Corout
             animationIntensity = p[K.animationIntensity] ?: d.animationIntensity,
             customResponse = p[K.customResponse] ?: d.customResponse,
             customDamping = p[K.customDamping] ?: d.customDamping,
+            squashStretch = p[K.squashStretch] ?: d.squashStretch,
+            iconFlight = p[K.iconFlight] ?: d.iconFlight,
+            arrivalPulse = p[K.arrivalPulse] ?: d.arrivalPulse,
+            lensGlint = p[K.lensGlint] ?: d.lensGlint,
+            blurReveal = p[K.blurReveal] ?: d.blurReveal,
+            tiltDepth = p[K.tiltDepth] ?: d.tiltDepth,
+            soundEffects = p[K.soundEffects] ?: d.soundEffects,
+            glanceEnabled = p[K.glance] ?: d.glanceEnabled,
+            statusBarCleanup = p[K.statusBarCleanup] ?: d.statusBarCleanup,
+            statusBarIcons = p[K.statusBarIcons] ?: d.statusBarIcons,
+            statusBarBackup = p[K.statusBarBackup] ?: d.statusBarBackup,
+            lastSeenVersion = p[K.lastSeenVersion] ?: d.lastSeenVersion,
             haptics = p[K.haptics] ?: d.haptics,
             tapAction = p.enum(K.tapAction, d.tapAction),
             swipeToDismiss = p[K.swipeToDismiss] ?: d.swipeToDismiss,
@@ -313,6 +337,18 @@ class SettingsRepository(private val context: Context, private val scope: Corout
         p[K.animationIntensity] = s.animationIntensity
         p[K.customResponse] = s.customResponse
         p[K.customDamping] = s.customDamping
+        p[K.squashStretch] = s.squashStretch
+        p[K.iconFlight] = s.iconFlight
+        p[K.arrivalPulse] = s.arrivalPulse
+        p[K.lensGlint] = s.lensGlint
+        p[K.blurReveal] = s.blurReveal
+        p[K.tiltDepth] = s.tiltDepth
+        p[K.soundEffects] = s.soundEffects
+        p[K.glance] = s.glanceEnabled
+        p[K.statusBarCleanup] = s.statusBarCleanup
+        p[K.statusBarIcons] = s.statusBarIcons
+        p[K.statusBarBackup] = s.statusBarBackup
+        p[K.lastSeenVersion] = s.lastSeenVersion
         p[K.haptics] = s.haptics
         p[K.tapAction] = s.tapAction.name
         p[K.swipeToDismiss] = s.swipeToDismiss
@@ -384,6 +420,7 @@ class SettingsRepository(private val context: Context, private val scope: Corout
                     put("d", r.durationMs)
                     put("t", r.showText)
                     r.privacy?.let { put("x", it.name) }
+                    if (r.accent != 0) put("a", r.accent)
                 })
             }
             return root.toString()
@@ -401,6 +438,7 @@ class SettingsRepository(private val context: Context, private val scope: Corout
                         durationMs = o.optLong("d", 0),
                         showText = o.optBoolean("t", true),
                         privacy = NotificationPrivacy.entries.firstOrNull { it.name == o.optString("x") },
+                        accent = o.optInt("a", 0),
                     ))
                 }
             }

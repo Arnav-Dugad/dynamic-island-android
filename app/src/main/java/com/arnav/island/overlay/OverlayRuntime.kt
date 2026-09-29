@@ -2,6 +2,7 @@ package com.arnav.island.overlay
 
 import android.animation.ValueAnimator
 import android.app.ActivityManager
+import android.app.AlarmManager
 import android.app.Service
 import android.content.ComponentCallbacks
 import android.content.Context
@@ -17,7 +18,14 @@ import android.view.View
 import android.view.WindowManager
 import com.arnav.island.core.AppGraph
 import com.arnav.island.core.IslandCommand
+import com.arnav.island.events.EntranceAnimation
 import com.arnav.island.events.EventPriority
+import com.arnav.island.events.EventSource
+import com.arnav.island.events.EventType
+import com.arnav.island.events.GlancePayload
+import com.arnav.island.events.Glyph
+import com.arnav.island.events.IslandEvent
+import com.arnav.island.events.MediaPayload
 import com.arnav.island.events.bluetooth.BluetoothMonitor
 import com.arnav.island.events.battery.BatteryMonitor
 import com.arnav.island.events.system.ScreenRecordingMonitor
@@ -26,6 +34,8 @@ import com.arnav.island.events.system.SystemStatsMonitor
 import com.arnav.island.island.IslandController
 import com.arnav.island.island.IslandState
 import com.arnav.island.island.render.IslandColors
+import com.arnav.island.island.render.IslandHaptics
+import com.arnav.island.island.render.IslandSounds
 import com.arnav.island.island.render.IslandView
 import com.arnav.island.island.render.RenderContext
 import com.arnav.island.island.render.RenderSettings
@@ -75,6 +85,9 @@ class OverlayRuntime(private val service: Service, private val graph: AppGraph) 
     private val system = SystemEventsMonitor(service, graph.events, settingsFn)
     private val recording = ScreenRecordingMonitor(windowContext, graph.events, settingsFn)
     private val stats = SystemStatsMonitor(service, graph.events, scope, settingsFn, { battery.temperatureC }, { view.fps })
+    private val haptics = IslandHaptics(windowContext) { settings.haptics }
+    private val sounds = IslandSounds(windowContext) { settings.soundEffects }
+    private val tilt = TiltSensor(windowContext) { dx, dy -> view.scene.setTilt(dx, dy); view.requestFrame() }
 
     private var settings: IslandSettings = graph.settings.state.value
     private var hud: DebugHud? = null
@@ -99,6 +112,8 @@ class OverlayRuntime(private val service: Service, private val graph: AppGraph) 
     }
 
     fun start() {
+        rc.haptics = haptics
+        rc.sounds = sounds
         rebuildGeometry(immediate = true)
         applyRenderSettings()
         view.touchExtension = rc.geometry.touchExtension
@@ -125,7 +140,9 @@ class OverlayRuntime(private val service: Service, private val graph: AppGraph) 
         }
         controller.onStateChanged = { t ->
             graph.runtime.update { it.copy(stateLabel = t.to.label) }
+            updateTilt()
         }
+        controller.glanceProvider = ::buildGlance
         controller.start()
         controller.updateSettings(settings)
 
@@ -143,6 +160,8 @@ class OverlayRuntime(private val service: Service, private val graph: AppGraph) 
                 when (command) {
                     is IslandCommand.Expand -> controller.expand(command.eventId)
                     IslandCommand.Collapse -> controller.collapse()
+                    IslandCommand.Glance -> controller.showGlance()
+                    IslandCommand.Stack -> controller.showStack()
                 }
             }
         }
@@ -165,6 +184,8 @@ class OverlayRuntime(private val service: Service, private val graph: AppGraph) 
 
     fun stop() {
         windowContext.unregisterComponentCallbacks(configCallbacks)
+        tilt.setActive(false)
+        sounds.release()
         controller.stop()
         hudJob?.cancel()
         hud?.detach()
@@ -202,6 +223,37 @@ class OverlayRuntime(private val service: Service, private val graph: AppGraph) 
         if (s.debugHud) showHud() else hideHud()
         updateMonitors()
         updateVisibility()
+        updateTilt()
+    }
+
+    /** Tilt depth only listens while an open card is on screen and the screen is usable. */
+    private fun updateTilt() {
+        tilt.maxOffsetPx = rc.dp(3.5f) * rc.settings.motionIntensity
+        val active = rc.settings.tiltDepth && !rc.settings.motion.reduceMotion && screen.state.value.usable && view.scene.state.isLarge
+        tilt.setActive(active)
+    }
+
+    /** Long-press on the idle island: the day at a glance, from public system state only. */
+    private fun buildGlance(): IslandEvent {
+        val now = System.currentTimeMillis()
+        val alarm = service.getSystemService(AlarmManager::class.java).nextAlarmClock?.triggerTime?.takeIf { it > now }
+        val timers = graph.timers.state.value.timers.count { !it.ringing }
+        val media = graph.events.current().live.firstOrNull { it.type == EventType.MEDIA }
+        val playing = (media?.payload as? MediaPayload)?.takeIf { it.isPlaying }?.let { m ->
+            if (m.artist.isBlank()) m.title else "${m.title} · ${m.artist}"
+        }
+        return IslandEvent(
+            id = GLANCE_ID,
+            source = EventSource.SYSTEM,
+            type = EventType.GLANCE,
+            timestamp = now,
+            persistent = false,
+            durationMs = GLANCE_MS,
+            title = "Glance",
+            icon = Glyph.CALENDAR,
+            animation = EntranceAnimation.BLOOM,
+            payload = GlancePayload(battery.level, battery.isCharging, alarm, timers, playing),
+        )
     }
 
     private fun updateMonitors() {
@@ -231,6 +283,9 @@ class OverlayRuntime(private val service: Service, private val graph: AppGraph) 
                 density = g.density,
                 statusBarHeight = g.screen.statusBarHeightPx,
                 deviceProfile = geometryEngine.profile.displayName,
+                compactWidthDp = g.compactWidth / g.density,
+                compactHeightDp = g.compactHeight / g.density,
+                expandedWidthDp = g.expandedWidth / g.density,
             )
         }
         view.refreshGeometry(immediate)
@@ -259,6 +314,13 @@ class OverlayRuntime(private val service: Service, private val graph: AppGraph) 
             calibrationGuides = graph.calibrating.value,
             swipeToDismiss = s.swipeToDismiss,
             swipeDownExpands = s.swipeDownExpands,
+            motionIntensity = s.animationIntensity,
+            squashStretch = s.squashStretch,
+            iconFlight = s.iconFlight,
+            arrivalPulse = s.arrivalPulse,
+            lensGlint = s.lensGlint,
+            blurReveal = s.blurReveal,
+            tiltDepth = s.tiltDepth,
         )
         view.requestFrame()
     }
@@ -370,5 +432,10 @@ class OverlayRuntime(private val service: Service, private val graph: AppGraph) 
         hudJob = null
         hud?.detach()
         hud = null
+    }
+
+    private companion object {
+        const val GLANCE_ID = "glance"
+        const val GLANCE_MS = 5_000L
     }
 }

@@ -1,8 +1,13 @@
 package com.arnav.island.island.render.presenters
 
+import android.graphics.BlendMode
+import android.graphics.BlendModeColorFilter
 import android.graphics.Canvas
+import android.graphics.LinearGradient
+import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.Path
+import android.graphics.Shader
 import android.graphics.SweepGradient
 import com.arnav.island.animation.Spring
 import com.arnav.island.animation.SpringSpec
@@ -20,6 +25,7 @@ import com.arnav.island.island.render.IslandColors
 import com.arnav.island.island.render.PresentMode
 import com.arnav.island.island.render.Presenter
 import com.arnav.island.island.render.RenderContext
+import com.arnav.island.island.render.RollingText
 import com.arnav.island.storage.IslandTheme
 import com.arnav.island.util.ColorExtractor
 import com.arnav.island.util.Formatters
@@ -52,7 +58,10 @@ class ChargingPresenter(rc: RenderContext) : Presenter(rc) {
 
     override fun measure(event: IslandEvent, mode: PresentMode): Pair<Float, Float> = when (mode) {
         PresentMode.TOAST -> mediumWidth to (bandInset + dp(56f))
-        PresentMode.EXPANDED -> expandedWidth to (bandInset + dp(132f))
+        PresentMode.EXPANDED -> {
+            val graph = ((event.payload as? ChargingPayload)?.powerHistory?.size ?: 0) >= MIN_GRAPH_POINTS
+            expandedWidth to (bandInset + dp(if (graph) 204f else 132f))
+        }
         else -> super.measure(event, mode)
     }
 
@@ -102,6 +111,8 @@ class ChargingPresenter(rc: RenderContext) : Presenter(rc) {
         }
         subtitle = when {
             c == null -> event.subtitle
+            // Plugged in but held (e.g. One UI "Protect battery"): say exactly where it stopped.
+            !c.isCharging && !c.isFull && c.plugType != PlugType.NONE -> "Paused at ${c.level}%"
             c.isCharging && c.timeToFullMs != null && c.timeToFullMs > 0 -> "Full in ${Formatters.humanDuration(c.timeToFullMs)}"
             else -> plugLabel(c.plugType).orEmpty()
         }
@@ -115,8 +126,21 @@ class ChargingPresenter(rc: RenderContext) : Presenter(rc) {
         PlugType.NONE, PlugType.UNKNOWN -> null
     }
 
+    private val percentText = RollingText()
+    private val graphLine = Path()
+    private val graphFill = Path()
+    private val graphGradient = LinearGradient(0f, 0f, 0f, 1f, 0x66FFFFFF, 0x00FFFFFF, Shader.TileMode.CLAMP)
+    private val graphMatrix = Matrix()
+
+    /** Odometer percentage: digits roll as the counter climbs to the real level. */
+    private fun drawPercent(canvas: Canvas, x: Float, y: Float, paint: android.text.TextPaint, alpha: Float, align: Paint.Align) {
+        percentText.set("${count.value.roundToInt()}%", direction = 1, animate = true)
+        percentText.draw(canvas, rc, x, y, paint, color, alpha, align)
+    }
+
     override fun step(dt: Float): Boolean {
         var moving = super.step(dt)
+        if (percentText.step(dt)) moving = true
         if (count.step(dt)) moving = true
         if (fillLevel.step(dt)) moving = true
         if (boltPop.step(dt)) moving = true
@@ -148,7 +172,7 @@ class ChargingPresenter(rc: RenderContext) : Presenter(rc) {
         val right = w - (h - s) / 2f + rc.burnInX
         drawBattery(canvas, right - bw, cy - dp(6f), bw, dp(12f), a, small = true)
         rc.numberPaint.textSize = rc.sp(14f)
-        rc.text(canvas, "${count.value.roundToInt()}%", right - bw - dp(6f), rc.baseline(rc.numberPaint, cy), rc.numberPaint, color, a, Paint.Align.RIGHT)
+        drawPercent(canvas, right - bw - dp(6f), rc.baseline(rc.numberPaint, cy), rc.numberPaint, a, Paint.Align.RIGHT)
     }
 
     private fun drawToast(canvas: Canvas, alpha: Float) {
@@ -172,7 +196,7 @@ class ChargingPresenter(rc: RenderContext) : Presenter(rc) {
             clusterLeft = batteryRight - bw - dp(8f)
         }
         rc.numberPaint.textSize = rc.sp(17f)
-        rc.text(canvas, "${count.value.roundToInt()}%", clusterLeft, rc.baseline(rc.numberPaint, cy), rc.numberPaint, color, alpha, Paint.Align.RIGHT)
+        drawPercent(canvas, clusterLeft, rc.baseline(rc.numberPaint, cy), rc.numberPaint, alpha, Paint.Align.RIGHT)
 
         // Left: glyph + status.
         val iconX = pad + dp(11f)
@@ -206,9 +230,10 @@ class ChargingPresenter(rc: RenderContext) : Presenter(rc) {
         val top = bandInset
 
         rc.bigNumberPaint.textSize = rc.sp(46f)
-        rc.text(canvas, "${count.value.roundToInt()}%", pad, top + dp(44f), rc.bigNumberPaint, color, alpha)
+        drawPercent(canvas, pad, top + dp(44f), rc.bigNumberPaint, alpha, Paint.Align.LEFT)
         rc.titlePaint.textSize = rc.sp(15f)
-        rc.text(canvas, rc.ellipsize(title, rc.titlePaint, w / 2f), pad, top + dp(68f), rc.titlePaint, IslandColors.TEXT, alpha)
+        val status = if (subtitle.startsWith("Paused")) "$title · $subtitle" else title
+        rc.text(canvas, rc.ellipsize(status, rc.titlePaint, w * 0.62f), pad, top + dp(68f), rc.titlePaint, IslandColors.TEXT, alpha)
 
         val bw = dp(92f)
         val bh = dp(42f)
@@ -223,7 +248,6 @@ class ChargingPresenter(rc: RenderContext) : Presenter(rc) {
             if (c?.timeToFullMs != null && c.timeToFullMs > 0 && c.isCharging) add("Full in" to Formatters.humanDuration(c.timeToFullMs))
             if (c?.temperatureC != null && rc.settings.theme != IslandTheme.MINIMAL) add("Temperature" to Formatters.temperature(c.temperatureC))
         }
-        if (details.isEmpty()) return
         val colW = (w - 2 * pad) / 3f
         rc.captionPaint.textSize = rc.sp(12f)
         rc.labelPaint.textSize = rc.sp(15f)
@@ -232,6 +256,65 @@ class ChargingPresenter(rc: RenderContext) : Presenter(rc) {
             rc.text(canvas, label, x, top + dp(98f), rc.captionPaint, IslandColors.TEXT_TERTIARY, alpha)
             rc.text(canvas, rc.ellipsize(value, rc.labelPaint, colW - dp(8f)), x, top + dp(118f), rc.labelPaint, IslandColors.TEXT, alpha)
         }
+        drawPowerGraph(canvas, pad, top + dp(140f), w - pad, top + dp(184f), alpha)
+    }
+
+    /**
+     * Live charging power, measured from public current x voltage readings (see
+     * BatteryMonitor). Shown only once there are enough real samples.
+     */
+    private fun drawPowerGraph(canvas: Canvas, l: Float, t: Float, r: Float, b: Float, alpha: Float) {
+        val history = charging?.powerHistory ?: return
+        if (history.size < MIN_GRAPH_POINTS) return
+        rc.captionPaint.textSize = rc.sp(12f)
+        rc.numberPaint.textSize = rc.sp(13f)
+        rc.text(canvas, "Charging power", l, t, rc.captionPaint, IslandColors.TEXT_TERTIARY, alpha)
+        val latest = history.last()
+        rc.text(canvas, String.format(java.util.Locale.US, "%.1f W", latest), r, t, rc.numberPaint, color, alpha, Paint.Align.RIGHT)
+
+        val top = t + dp(8f)
+        val max = maxOf(history.max(), 5f) * 1.15f
+        val n = history.size
+        graphLine.rewind()
+        graphFill.rewind()
+        var px = l
+        var py = b
+        for (i in 0 until n) {
+            val x = l + (r - l) * i / (n - 1).toFloat()
+            val y = b - (history[i] / max) * (b - top)
+            if (i == 0) {
+                graphLine.moveTo(x, y)
+                graphFill.moveTo(x, b)
+                graphFill.lineTo(x, y)
+            } else {
+                val mx = (px + x) / 2f
+                graphLine.quadTo(px, py, mx, (py + y) / 2f)
+                graphFill.quadTo(px, py, mx, (py + y) / 2f)
+            }
+            px = x
+            py = y
+        }
+        graphLine.lineTo(px, py)
+        graphFill.lineTo(px, py)
+        graphFill.lineTo(px, b)
+        graphFill.close()
+
+        graphMatrix.setScale(1f, b - top)
+        graphMatrix.postTranslate(0f, top)
+        graphGradient.setLocalMatrix(graphMatrix)
+        // The white gradient supplies the fade; the colour filter tints it with the theme colour.
+        rc.fill.shader = graphGradient
+        rc.fill.colorFilter = BlendModeColorFilter(color, BlendMode.SRC_IN)
+        rc.fill.alpha = (255 * alpha).toInt().coerceIn(0, 255)
+        canvas.drawPath(graphFill, rc.fill)
+        rc.fill.shader = null
+        rc.fill.colorFilter = null
+        rc.stroke.shader = null
+        rc.stroke.strokeWidth = dp(1.8f)
+        rc.stroke.color = color
+        rc.stroke.alpha = (255 * alpha).toInt().coerceIn(0, 255)
+        canvas.drawPath(graphLine, rc.stroke)
+        rc.circle(canvas, px, py, dp(3f), color, alpha)
     }
 
     /** Battery outline + animated fill (+ liquid surface for the Liquid theme). */
@@ -336,4 +419,8 @@ class ChargingPresenter(rc: RenderContext) : Presenter(rc) {
 
     override val contentDescription: String
         get() = "$title, $level percent${if (subtitle.isNotEmpty()) ", $subtitle" else ""}"
+
+    private companion object {
+        const val MIN_GRAPH_POINTS = 4
+    }
 }

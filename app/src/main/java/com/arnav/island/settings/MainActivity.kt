@@ -57,6 +57,9 @@ class MainActivity : ComponentActivity() {
         "timers" -> Dest.TIMERS
         "calibration" -> Dest.CALIBRATION
         "developer" -> Dest.DEVELOPER
+        "studio" -> Dest.STUDIO
+        "whats_new" -> Dest.WHATS_NEW
+        "share" -> Dest.SHARE
         else -> null
     }
 

@@ -104,6 +104,13 @@ class PreviewIsland(context: Context, graph: AppGraph) {
             notificationStyle = s.notificationStyle,
             swipeToDismiss = s.swipeToDismiss,
             swipeDownExpands = s.swipeDownExpands,
+            motionIntensity = s.animationIntensity,
+            squashStretch = s.squashStretch,
+            iconFlight = s.iconFlight,
+            arrivalPulse = s.arrivalPulse,
+            lensGlint = s.lensGlint,
+            blurReveal = s.blurReveal,
+            tiltDepth = false,
         )
         controller.updateSettings(s.copy(burnInProtection = false))
         if (geometryChanged && laidOut) layout()
@@ -137,7 +144,7 @@ class PreviewIsland(context: Context, graph: AppGraph) {
     suspend fun runDemo() {
         delay(700)
         while (true) {
-            tests.music(true)
+            tests.music(true, rich = false)
             delay(3_400)
             tests.charging()
             delay(4_300)

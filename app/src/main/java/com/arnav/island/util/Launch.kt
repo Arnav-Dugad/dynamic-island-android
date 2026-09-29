@@ -33,11 +33,14 @@ object Launch {
         }
     }
 
-    /** Sends a PendingIntent created by another app (notification content intent, action...). */
-    fun send(context: Context, pendingIntent: PendingIntent?): Boolean {
+    /**
+     * Sends a PendingIntent created by another app (notification content intent, action...).
+     * [fillIn] carries extras such as RemoteInput results for a reply action.
+     */
+    fun send(context: Context, pendingIntent: PendingIntent?, fillIn: Intent? = null): Boolean {
         if (pendingIntent == null) return false
         return try {
-            pendingIntent.send(context, 0, null, null, null, null, options())
+            pendingIntent.send(context, 0, fillIn, null, null, null, options())
             true
         } catch (e: PendingIntent.CanceledException) {
             Log.w(TAG, "PendingIntent was cancelled", e)

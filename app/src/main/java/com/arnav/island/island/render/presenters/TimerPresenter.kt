@@ -9,9 +9,11 @@ import com.arnav.island.events.IslandEvent
 import com.arnav.island.events.StopwatchPayload
 import com.arnav.island.events.TimerPayload
 import com.arnav.island.island.render.IslandColors
+import com.arnav.island.island.render.IslandHaptics
 import com.arnav.island.island.render.PresentMode
 import com.arnav.island.island.render.Presenter
 import com.arnav.island.island.render.RenderContext
+import com.arnav.island.island.render.RollingText
 import com.arnav.island.util.ColorExtractor
 import com.arnav.island.util.Formatters
 import kotlin.math.sin
@@ -64,6 +66,41 @@ class TimerPresenter(rc: RenderContext) : Presenter(rc) {
 
     private fun action(id: String) = event.actions.firstOrNull { it.id == id }
 
+    private val compactText = RollingText()
+    private val bigText = RollingText()
+    private var lastTickSecond = -1L
+
+    override fun step(dt: Float): Boolean {
+        var moving = super.step(dt)
+        if (compactText.step(dt)) moving = true
+        if (bigText.step(dt)) moving = true
+        return moving
+    }
+
+    /** Final countdown: the last ten seconds of a running timer. */
+    private fun inFinalCountdown(now: Long): Boolean {
+        val t = timer ?: return false
+        if (isStopwatch || isRinging || t.isPaused) return false
+        return t.remainingAt(now) in 1..FINAL_COUNTDOWN_MS
+    }
+
+    /** Colour warming from the timer accent to red, and a pulse at the start of each second. */
+    private fun countdownStyle(now: Long, base: Int): Pair<Int, Float> {
+        val t = timer ?: return base to 1f
+        if (!inFinalCountdown(now)) return base to 1f
+        val remaining = t.remainingAt(now)
+        val phase = 1f - (remaining % 1000) / 1000f
+        val decay = (1f - phase).let { it * it * it }
+        val heat = 1f - remaining / FINAL_COUNTDOWN_MS.toFloat()
+        // One haptic tick per second while the island shows the final countdown.
+        val second = (remaining + 999) / 1000
+        if (second != lastTickSecond) {
+            lastTickSecond = second
+            if (rc.settings.haptics) rc.haptics?.play(IslandHaptics.Cue.TICK, touch = false)
+        }
+        return ColorExtractor.blend(base, IslandColors.RED, heat.coerceIn(0f, 1f)) to (1f + 0.12f * decay)
+    }
+
     override fun nextFrameDelay(now: Long): Long {
         if (isRinging) return rc.settings.decorativeFrameMs
         if (isStopwatch) {
@@ -75,6 +112,7 @@ class TimerPresenter(rc: RenderContext) : Presenter(rc) {
         if (t.isPaused) return -1
         val remaining = t.remainingAt(now)
         if (remaining <= 0) return -1
+        if (inFinalCountdown(now)) return rc.settings.decorativeFrameMs
         return (remaining % 1000).coerceAtLeast(1) + 4
     }
 
@@ -111,13 +149,18 @@ class TimerPresenter(rc: RenderContext) : Presenter(rc) {
                 val sw = stopwatch ?: return
                 rc.glyphs.draw(canvas, Glyph.STOPWATCH, lx, cy, s * 0.92f, accent, a)
                 val color = if (sw.isRunning) IslandColors.TEXT else IslandColors.TEXT_SECONDARY
-                rc.text(canvas, Formatters.elapsed(sw.elapsedAt(now)), right, rc.baseline(rc.numberPaint, cy), rc.numberPaint, color, a, Paint.Align.RIGHT)
+                compactText.set(Formatters.elapsed(sw.elapsedAt(now)), direction = 1, animate = true)
+                compactText.draw(canvas, rc, right, rc.baseline(rc.numberPaint, cy), rc.numberPaint, color, a, Paint.Align.RIGHT)
             }
             else -> {
                 val t = timer ?: return
-                val color = if (t.isPaused) IslandColors.TEXT_SECONDARY else accent
+                val (color, pulse) = countdownStyle(now, if (t.isPaused) IslandColors.TEXT_SECONDARY else accent)
                 rc.glyphs.drawRing(canvas, lx, cy, s / 2f - dp(1.5f), dp(2.6f), t.fractionRemaining(now), color, IslandColors.TRACK, a)
-                rc.text(canvas, Formatters.countdown(t.remainingAt(now)), right, rc.baseline(rc.numberPaint, cy), rc.numberPaint, color, a, Paint.Align.RIGHT)
+                compactText.set(Formatters.countdown(t.remainingAt(now)), direction = -1, animate = true)
+                canvas.save()
+                canvas.scale(pulse, pulse, right, cy)
+                compactText.draw(canvas, rc, right, rc.baseline(rc.numberPaint, cy), rc.numberPaint, color, a, Paint.Align.RIGHT)
+                canvas.restore()
             }
         }
     }
@@ -146,12 +189,12 @@ class TimerPresenter(rc: RenderContext) : Presenter(rc) {
                 if (sw.isRunning) ActionStyle.DESTRUCTIVE else ActionStyle.POSITIVE, alpha, glyphScale = 0.44f)
             drawCircleButton(canvas, ACTION_SECONDARY, if (sw.isRunning) Glyph.FLAG else Glyph.CLOSE, first + dp(54f), buttonsY, dp(22f),
                 ActionStyle.DEFAULT, alpha, glyphScale = 0.42f)
-            drawBigTime(canvas, Formatters.stopwatch(sw.elapsedAt(now)), w - pad, first + dp(54f) + dp(34f), IslandColors.TEXT, alpha)
+            drawBigTime(canvas, Formatters.stopwatch(sw.elapsedAt(now)), w - pad, first + dp(54f) + dp(34f), IslandColors.TEXT, alpha, direction = 1, roll = false)
             return
         }
 
         val t = timer ?: return
-        val color = if (t.isPaused) IslandColors.TEXT_SECONDARY else accent
+        val (color, pulse) = countdownStyle(now, if (t.isPaused) IslandColors.TEXT_SECONDARY else accent)
         val label = buildString {
             append(t.label.ifBlank { "Timer" })
             append(" · ")
@@ -169,17 +212,24 @@ class TimerPresenter(rc: RenderContext) : Presenter(rc) {
         val l = first + dp(54f) + dp(32f)
         drawPillButton(canvas, ACTION_ADD, "+1:00", l, buttonsY - dp(18f), l + dp(66f), buttonsY + dp(18f), ActionStyle.DEFAULT, alpha)
 
-        drawBigTime(canvas, Formatters.countdown(t.remainingAt(now)), w - pad, l + dp(66f), color, alpha)
+        canvas.save()
+        canvas.scale(pulse, pulse, w - pad, buttonsY)
+        drawBigTime(canvas, Formatters.countdown(t.remainingAt(now)), w - pad, l + dp(66f), color, alpha, direction = -1, roll = true)
+        canvas.restore()
     }
 
-    /** Right-aligned big numerals, shrunk to fit whatever space the buttons leave. */
-    private fun drawBigTime(canvas: Canvas, text: String, right: Float, minLeft: Float, color: Int, alpha: Float) {
+    /**
+     * Right-aligned big numerals, shrunk to fit whatever space the buttons leave. Countdown
+     * digits roll like an odometer; the fast-changing stopwatch hundredths do not.
+     */
+    private fun drawBigTime(canvas: Canvas, text: String, right: Float, minLeft: Float, color: Int, alpha: Float, direction: Int, roll: Boolean) {
         val paint = rc.bigNumberPaint
         paint.textSize = rc.sp(40f)
         val available = right - minLeft - dp(12f)
         val width = paint.measureText(text)
         if (width > available && available > 0f) paint.textSize *= available / width
-        rc.text(canvas, text, right, rc.baseline(paint, buttonsY), paint, color, alpha, Paint.Align.RIGHT)
+        bigText.set(text, direction, animate = roll)
+        bigText.draw(canvas, rc, right, rc.baseline(paint, buttonsY), paint, color, alpha, Paint.Align.RIGHT)
     }
 
     private fun drawRinging(canvas: Canvas, alpha: Float) {
@@ -216,6 +266,7 @@ class TimerPresenter(rc: RenderContext) : Presenter(rc) {
         }
 
     companion object {
+        private const val FINAL_COUNTDOWN_MS = 10_000L
         const val ACTION_TOGGLE = "timer.toggle"
         const val ACTION_SECONDARY = "timer.secondary"
         const val ACTION_ADD = "timer.add"

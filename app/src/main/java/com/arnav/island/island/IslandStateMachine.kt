@@ -25,7 +25,10 @@ class IslandStateMachine {
     /** Auto-expanding event (e.g. incoming call) the user chose to collapse to its compact form. */
     private var userCollapsedId: String? = null
 
-    val expandedByUser: Boolean get() = userExpandedId != null
+    /** The user asked to see every running activity at once. */
+    private var userStack = false
+
+    val expandedByUser: Boolean get() = userExpandedId != null || userStack
 
     fun onSchedule(newSchedule: Schedule): IslandTransition? {
         schedule = newSchedule
@@ -34,7 +37,10 @@ class IslandStateMachine {
 
     fun onVisibility(isVisible: Boolean): IslandTransition? {
         visible = isVisible
-        if (!isVisible) userExpandedId = null
+        if (!isVisible) {
+            userExpandedId = null
+            userStack = false
+        }
         return commit()
     }
 
@@ -49,12 +55,25 @@ class IslandStateMachine {
         val target = eventId ?: state.focusEvent?.id ?: return null
         if (schedule.find(target)?.let(::allowed) != true) return null
         userExpandedId = target
+        userStack = false
         if (userCollapsedId == target) userCollapsedId = null
+        return commit()
+    }
+
+    /** Shows every running activity. Needs at least two; otherwise nothing changes. */
+    fun showStack(): IslandTransition? {
+        if (stackCandidates().size < 2) return null
+        userStack = true
+        userExpandedId = null
         return commit()
     }
 
     fun collapse(): IslandTransition? {
         val current = state
+        if (current is IslandState.Stack) {
+            userStack = false
+            return commit()
+        }
         if (current !is IslandState.Expanded) return null
         if (current.event.autoExpand) userCollapsedId = current.event.id
         userExpandedId = null
@@ -75,6 +94,9 @@ class IslandStateMachine {
         return IslandTransition(previous, next, classifyTransition(previous, next))
     }
 
+    private fun stackCandidates(): List<IslandEvent> =
+        listOfNotNull(schedule.toast?.takeIf(::allowed)) + schedule.live.filter(::allowed)
+
     private fun derive(): IslandState {
         if (!visible) return IslandState.Hidden
 
@@ -82,6 +104,12 @@ class IslandStateMachine {
         val live = schedule.live.filter(::allowed)
         val primary = live.getOrNull(0)
         val secondary = live.getOrNull(1)
+
+        if (userStack) {
+            val items = stackCandidates()
+            if (items.size >= 2) return IslandState.Stack(items)
+            userStack = false
+        }
 
         userExpandedId?.let { id ->
             val event = (if (toast?.id == id) toast else live.firstOrNull { it.id == id })

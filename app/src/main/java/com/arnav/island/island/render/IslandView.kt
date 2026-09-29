@@ -35,7 +35,8 @@ class IslandView(
     private val overlayMode: Boolean,
 ) : View(context), Choreographer.FrameCallback {
 
-    enum class Swipe { UP, DOWN, LEFT, RIGHT }
+    /** DOWN_FAR: pulled past the second detent (show every activity). */
+    enum class Swipe { UP, DOWN, DOWN_FAR, LEFT, RIGHT }
 
     interface Host {
         fun onTap(slot: IslandScene.Slot)
@@ -73,6 +74,8 @@ class IslandView(
     private var downY = 0f
     private var downSlot = IslandScene.Slot.MAIN
     private var downTarget: HitTarget? = null
+    private var detentLevel = 0
+    private val detents = FloatArray(2)
     private var velocityTracker: VelocityTracker? = null
     private val longPressRunnable = Runnable { onLongPressTimeout() }
 
@@ -228,6 +231,9 @@ class IslandView(
                 dragging = false
                 longPressed = false
                 scrubbing = false
+                detentLevel = 0
+                detents[0] = rc.dp(DETENT_EXPAND_DP)
+                detents[1] = rc.dp(DETENT_STACK_DP)
                 downX = x
                 downY = y
                 downSlot = hit.slot
@@ -240,8 +246,9 @@ class IslandView(
                 if (target != null && presenter != null) {
                     if (target.kind == HitKind.SEEK) {
                         scrubbing = true
+                        presenter.scrubTargetId = target.id
                         presenter.onScrub(scene.fractionIn(target, x))
-                        haptic(HapticFeedbackConstants.CLOCK_TICK)
+                        feedback(IslandHaptics.Cue.TICK)
                     } else {
                         presenter.setPressed(target.id)
                     }
@@ -273,8 +280,9 @@ class IslandView(
                         downTarget = null
                     }
                 }
-                if (dragging && !longPressed) {
-                    scene.drag(dx, dy)
+                if (dragging && (!longPressed || dy > 0f)) {
+                    updateDetent(dy)
+                    scene.drag(if (longPressed) 0f else dx, dy, detents)
                     requestFrame()
                 }
                 return true
@@ -315,14 +323,18 @@ class IslandView(
                 val target = downTarget
                 val fraction = if (target != null) scene.fractionIn(target, x) else 0f
                 presenter?.onScrubEnd(fraction)
-                haptic(HapticFeedbackConstants.CLOCK_TICK)
+                feedback(IslandHaptics.Cue.TICK)
+            }
+            detentLevel >= 2 -> {
+                scene.releaseDrag(0f, vy)
+                host?.onSwipe(Swipe.DOWN_FAR, vy)
             }
             longPressed -> scene.releaseDrag(vx, vy)
             dragging -> {
-                val swipe = classify(dx, dy, vx, vy)
+                val swipe = if (detentLevel == 1) Swipe.DOWN else classify(dx, dy, vx, vy)
                 scene.releaseDrag(vx, vy)
                 if (swipe != null) {
-                    haptic(if (Build.VERSION.SDK_INT >= 30) HapticFeedbackConstants.GESTURE_END else HapticFeedbackConstants.VIRTUAL_KEY)
+                    feedback(if (swipe == Swipe.DOWN) IslandHaptics.Cue.EXPAND else IslandHaptics.Cue.COLLAPSE)
                     host?.onSwipe(swipe, if (swipe == Swipe.UP || swipe == Swipe.DOWN) vy else vx)
                     if (swipe == Swipe.DOWN) scene.kick(vy)
                 }
@@ -331,12 +343,12 @@ class IslandView(
                 val target = downTarget!!
                 val hit = scene.hitTest(x, y, touchExtension)
                 if (hit?.target?.id == target.id) {
-                    haptic(if (Build.VERSION.SDK_INT >= 30) HapticFeedbackConstants.CONFIRM else HapticFeedbackConstants.VIRTUAL_KEY)
+                    feedback(IslandHaptics.Cue.CONFIRM)
                     target.action?.let { host?.onAction(it) }
                 }
             }
             else -> {
-                haptic(HapticFeedbackConstants.VIRTUAL_KEY)
+                feedback(IslandHaptics.Cue.PRESS)
                 host?.onTap(downSlot)
             }
         }
@@ -373,14 +385,47 @@ class IslandView(
     private fun onLongPressTimeout() {
         if (!tracking || dragging || downTarget != null) return
         longPressed = true
-        haptic(HapticFeedbackConstants.LONG_PRESS)
+        feedback(IslandHaptics.Cue.EXPAND)
         scene.pressUp()
         host?.onLongPress(downSlot)
         requestFrame()
     }
 
-    fun haptic(constant: Int) {
-        if (rc.settings.haptics) performHapticFeedback(constant)
+    /** Magnetic detents while pulling down: a haptic notch and a click of the shape at each. */
+    private fun updateDetent(dy: Float) {
+        val level = when {
+            dy >= detents[1] -> 2
+            dy >= detents[0] -> 1
+            else -> 0
+        }
+        if (level != detentLevel) {
+            detentLevel = level
+            feedback(IslandHaptics.Cue.NOTCH)
+            scene.notch()
+        }
+    }
+
+    /** Detaches the island for a throw-to-dismiss; the controller then applies the next state. */
+    fun throwAway(velocityX: Float) {
+        scene.throwAway(velocityX)
+        requestFrame()
+    }
+
+    /** Plays a haptic cue through the primitive-based engine, or the view fallback. */
+    fun feedback(cue: IslandHaptics.Cue) {
+        if (!rc.settings.haptics) return
+        val engine = rc.haptics
+        if (engine != null) {
+            engine.play(cue)
+            return
+        }
+        val constant = when (cue) {
+            IslandHaptics.Cue.EXPAND -> HapticFeedbackConstants.LONG_PRESS
+            IslandHaptics.Cue.CONFIRM -> if (Build.VERSION.SDK_INT >= 30) HapticFeedbackConstants.CONFIRM else HapticFeedbackConstants.VIRTUAL_KEY
+            IslandHaptics.Cue.COLLAPSE -> if (Build.VERSION.SDK_INT >= 30) HapticFeedbackConstants.GESTURE_END else HapticFeedbackConstants.VIRTUAL_KEY
+            else -> HapticFeedbackConstants.CLOCK_TICK
+        }
+        performHapticFeedback(constant)
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -416,6 +461,8 @@ class IslandView(
         const val LONG_PRESS_MS = 380L
         const val SWIPE_DISTANCE_DP = 26f
         const val FLING_VELOCITY_DP = 650f
+        const val DETENT_EXPAND_DP = 30f
+        const val DETENT_STACK_DP = 86f
 
         const val CMD_EXPAND = "expand"
         const val CMD_COLLAPSE = "collapse"

@@ -29,6 +29,15 @@
         tools:ignore="ProtectedPermissions" />
     <!-- Android 15+: official screen recording detection (install-time, no prompt). -->
     <uses-permission android:name="android.permission.DETECT_SCREEN_RECORDING" />
+    <!-- Island haptics (vibration primitives) and the timer alert pattern. -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <!--
+        Experimental, optional status-bar cleanup. Can only be granted by the user over ADB
+        (pm grant com.arnav.island android.permission.WRITE_SECURE_SETTINGS); never requested.
+    -->
+    <uses-permission
+        android:name="android.permission.WRITE_SECURE_SETTINGS"
+        tools:ignore="ProtectedPermissions" />
 
     <!--
         Local API: apps must be granted this permission by the user before they can post live
@@ -73,6 +82,16 @@
             </intent-filter>
         </activity>
 
+        <!-- Quick reply sheet that opens from an expanded notification. -->
+        <activity
+            android:name=".settings.reply.ReplyActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:launchMode="singleInstance"
+            android:taskAffinity="com.arnav.island.reply"
+            android:theme="@style/Theme.Island.Reply"
+            android:windowSoftInputMode="adjustResize|stateVisible" />
+
         <service
             android:name=".overlay.IslandOverlayService"
             android:exported="false"
@@ -82,18 +101,7 @@
                 android:value="Hosts the user-enabled overlay around the display cutout that shows live activities such as media, timers, calls and charging." />
         </service>
 
-        <service
-            android:name=".events.notification.IslandNotificationListener"
-            android:exported="true"
-            android:label="@string/listener_label"
-            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
-            <intent-filter>
-                <action android:name="android.service.notification.NotificationListenerService" />
-            </intent-filter>
-            <meta-data
-                android:name="android.service.notification.default_filter_types"
-                android:value="conversations|alerting|ongoing|silent" />
-        </service>
+        <!-- The NotificationListenerService lives in src/full/AndroidManifest.xml (Full edition only). -->
 
         <receiver
             android:name=".overlay.BootReceiver"

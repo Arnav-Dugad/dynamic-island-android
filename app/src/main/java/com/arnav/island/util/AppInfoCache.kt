@@ -27,6 +27,7 @@ class AppInfoCache(private val context: Context) {
     private val labels = LruCache<String, String>(256)
     private val icons = LruCache<String, Bitmap>(64)
     private val categories = LruCache<String, Int>(256)
+    private val accents = LruCache<String, Int>(128)
 
     fun label(packageName: String): String {
         labels.get(packageName)?.let { return it }
@@ -55,6 +56,19 @@ class AppInfoCache(private val context: Context) {
     suspend fun icon(packageName: String, sizePx: Int): Bitmap? = withContext(Dispatchers.Default) { iconBlocking(packageName, sizePx) }
 
     fun cachedIcon(packageName: String, sizePx: Int): Bitmap? = icons.get("$packageName@$sizePx")
+
+    /**
+     * The app's brand colour taken from its launcher icon, lifted to read on black; 0 when the
+     * icon is monochrome. Off the main thread the first time for a package.
+     */
+    fun accentBlocking(packageName: String): Int {
+        accents.get(packageName)?.let { return it }
+        val icon = iconBlocking(packageName, 96) ?: return 0
+        val color = ColorExtractor.accentFrom(Bitmaps.samplePixels(icon))
+        val accent = if (color == ColorExtractor.FALLBACK) 0 else color
+        accents.put(packageName, accent)
+        return accent
+    }
 
     private fun category(packageName: String): Int {
         categories.get(packageName)?.let { return it }

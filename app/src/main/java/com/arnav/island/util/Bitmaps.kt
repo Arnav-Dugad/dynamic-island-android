@@ -2,6 +2,8 @@ package com.arnav.island.util
 
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.graphics.Paint
+import android.graphics.Typeface
 import android.graphics.drawable.AdaptiveIconDrawable
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
@@ -50,6 +52,25 @@ object Bitmaps {
         val px = IntArray(scaled.width * scaled.height)
         scaled.getPixels(px, 0, scaled.width, 0, 0, scaled.width, scaled.height)
         return px
+    }
+
+    /** A square monogram tile (initials on a colour derived from the name) for people without a photo. */
+    fun monogram(name: String, sizePx: Int): Bitmap {
+        val initials = name.split(' ', '-', '_').filter { it.isNotBlank() && it.first().isLetterOrDigit() }
+            .take(2).joinToString("") { it.first().uppercase() }.ifEmpty { "?" }
+        val hue = ((name.hashCode() and 0x7fffffff) % 360).toFloat()
+        val bmp = createBitmap(sizePx, sizePx)
+        val canvas = Canvas(bmp)
+        canvas.drawColor(ColorExtractor.hslToRgb(hue, 0.42f, 0.36f))
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = ColorExtractor.hslToRgb(hue, 0.7f, 0.86f)
+            textSize = sizePx * if (initials.length > 1) 0.38f else 0.46f
+            typeface = Typeface.create(Typeface.DEFAULT, 600, false)
+            textAlign = Paint.Align.CENTER
+        }
+        val y = sizePx / 2f - (paint.descent() + paint.ascent()) / 2f
+        canvas.drawText(initials, sizePx / 2f, y, paint)
+        return bmp
     }
 
     private fun Bitmap.copyIfHardware(): Bitmap =

@@ -13,6 +13,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.Reply
+import androidx.compose.material.icons.automirrored.rounded.ShowChart
 import androidx.compose.material.icons.rounded.Api
 import androidx.compose.material.icons.rounded.BatteryChargingFull
 import androidx.compose.material.icons.rounded.Bluetooth
@@ -21,6 +23,8 @@ import androidx.compose.material.icons.rounded.Call
 import androidx.compose.material.icons.rounded.CloseFullscreen
 import androidx.compose.material.icons.rounded.DeleteSweep
 import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.Forum
+import androidx.compose.material.icons.rounded.HourglassBottom
 import androidx.compose.material.icons.rounded.Layers
 import androidx.compose.material.icons.rounded.Memory
 import androidx.compose.material.icons.rounded.MusicNote
@@ -34,6 +38,9 @@ import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material.icons.rounded.Thermostat
 import androidx.compose.material.icons.rounded.Timelapse
 import androidx.compose.material.icons.rounded.Timer
+import androidx.compose.material.icons.rounded.Today
+import androidx.compose.material.icons.rounded.ViewAgenda
+import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilledTonalButton
@@ -61,6 +68,7 @@ import com.arnav.island.core.IslandCommand
 import com.arnav.island.events.api.IslandApiContract
 import com.arnav.island.events.api.IslandApiHandler
 import com.arnav.island.permissions.Permissions
+import com.arnav.island.settings.reply.ReplyRequest
 import com.arnav.island.settings.ui.Dest
 import com.arnav.island.settings.ui.Ui
 import com.arnav.island.settings.ui.components.Group
@@ -75,6 +83,7 @@ import com.arnav.island.settings.ui.theme.BadgeColors
 import com.arnav.island.settings.ui.theme.LocalIslandColors
 import com.arnav.island.storage.IslandSettings
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 
 @Composable
 fun AdvancedScreen(s: IslandSettings, ui: Ui) {
@@ -87,6 +96,11 @@ fun AdvancedScreen(s: IslandSettings, ui: Ui) {
             Group(title = "Developer") {
                 SwitchRow("Debug HUD", s.debugHud, { v -> ui.update { it.copy(debugHud = v) } }, "FPS, frame time, state, queue, window, camera and memory", Icons.Rounded.BugReport, BadgeColors.Graphite)
                 NavRow("Developer tools", "Fire test events on the real island", Icons.Rounded.Science, BadgeColors.Violet) { ui.go(Dest.DEVELOPER) }
+            }
+        }
+        item {
+            Group(title = "System UI") {
+                NavRow("Status bar cleanup", "Experimental · hide icons the island already shows", Icons.Rounded.VisibilityOff, BadgeColors.Graphite) { ui.go(Dest.STATUS_BAR) }
             }
         }
         item {
@@ -141,7 +155,7 @@ fun AdvancedScreen(s: IslandSettings, ui: Ui) {
             confirmButton = {
                 TextButton(onClick = {
                     confirmReset = false
-                    ui.update { IslandSettings(enabled = it.enabled, onboardingDone = true) }
+                    ui.update { IslandSettings(enabled = it.enabled, onboardingDone = true, lastSeenVersion = it.lastSeenVersion) }
                 }) { Text("Reset") }
             },
             dismissButton = { TextButton(onClick = { confirmReset = false }) { Text("Cancel") } },
@@ -155,6 +169,8 @@ fun DeveloperScreen(s: IslandSettings, ui: Ui) {
     val schedule by ui.graph.events.schedule.collectAsStateWithLifecycle()
     var notificationCount by remember { mutableIntStateOf(1) }
     val tests = ui.graph.testEvents
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
 
     SettingsPage("Developer tools", onBack = ui::back) {
         item {
@@ -193,6 +209,23 @@ fun DeveloperScreen(s: IslandSettings, ui: Ui) {
             }
         }
         item {
+            Group(title = "New in 1.1", footer = "Glance uses real device state. The reply test opens the real reply sheet; what you type goes nowhere.") {
+                TestRow("Group chat + quick reply", Icons.Rounded.Forum, BadgeColors.Green) { tests.groupChat(testReplyAction(context) { ui.graph.events.remove("test:group") }) }
+                TestRow("Timer final countdown", Icons.Rounded.HourglassBottom, BadgeColors.Orange) { tests.finalCountdown() }
+                TestRow("Charging graph", Icons.AutoMirrored.Rounded.ShowChart, BadgeColors.Green) { tests.chargingGraph(s.chargingTheme) }
+                TestRow("Glance", Icons.Rounded.Today, BadgeColors.Cyan) { ui.graph.commands.tryEmit(IslandCommand.Glance) }
+                TestRow("Stack peek", Icons.Rounded.ViewAgenda, BadgeColors.Indigo) {
+                    tests.music(true)
+                    tests.timer(4)
+                    scope.launch {
+                        delay(600)
+                        ui.graph.commands.tryEmit(IslandCommand.Stack)
+                    }
+                }
+                TestRow("Reply sheet", Icons.AutoMirrored.Rounded.Reply, BadgeColors.Blue) { ReplyRequest.launch(context, ReplyRequest.test(context)) }
+            }
+        }
+        item {
             Group(title = "Control") {
                 TestRow("Expand", Icons.Rounded.OpenInFull, BadgeColors.Graphite) { ui.graph.commands.tryEmit(IslandCommand.Expand()) }
                 TestRow("Collapse", Icons.Rounded.CloseFullscreen, BadgeColors.Graphite) { ui.graph.commands.tryEmit(IslandCommand.Collapse) }
@@ -227,11 +260,12 @@ fun AboutScreen(ui: Ui) {
                     Spacer(Modifier.width(16.dp))
                     Column {
                         Text("Island", style = MaterialTheme.typography.headlineSmall)
-                        Text("Version ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("Version ${BuildConfig.VERSION_NAME}" + if (BuildConfig.LITE) " · Lite edition" else "", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
         }
+        item { UpdatesGroup(ui) }
         item {
             Group(title = "This device") {
                 SettingRow("Model", "${Build.MANUFACTURER} ${Build.MODEL} · Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})")
@@ -242,8 +276,12 @@ fun AboutScreen(ui: Ui) {
         item {
             Group(title = "Permissions") {
                 PermissionRow("Display over other apps", "Required", p.overlay, Icons.Rounded.Layers, BadgeColors.Indigo, onGrant = { ui.open(Permissions.overlaySettings(context)) })
-                PermissionRow("Notification access", "Media, calls, navigation, notifications", p.notificationAccess, Icons.Rounded.Notifications, BadgeColors.Pink,
-                    onGrant = { ui.open(Permissions.notificationAccessSettings(context), Permissions.notificationAccessFallback()) })
+                if (BuildConfig.LITE) {
+                    PermissionRow("Notification access", "Island full edition only", false, Icons.Rounded.Notifications, BadgeColors.Pink, onGrant = { ui.go(Dest.SHARE) }, grantLabel = "Get")
+                } else {
+                    PermissionRow("Notification access", "Media, calls, navigation, notifications", p.notificationAccess, Icons.Rounded.Notifications, BadgeColors.Pink,
+                        onGrant = { ui.open(Permissions.notificationAccessSettings(context), Permissions.notificationAccessFallback()) })
+                }
                 PermissionRow("Notifications", "Timer alerts", p.postNotifications, Icons.Rounded.Notifications, BadgeColors.Red, onGrant = { ui.open(Permissions.appNotificationSettings(context)) })
                 PermissionRow("Nearby devices", "Bluetooth events", p.bluetooth, Icons.Rounded.Bluetooth, BadgeColors.Blue, onGrant = { ui.go(Dest.BLUETOOTH) })
                 PermissionRow("Usage access", "Per-app rules and Game Mode", p.usageAccess, Icons.Rounded.Speed, BadgeColors.Yellow,
@@ -268,6 +306,7 @@ fun AboutScreen(ui: Ui) {
         item {
             Group(title = "Open source") {
                 SettingRow("AndroidX, Jetpack Compose, Kotlin", "Apache License 2.0")
+                SettingRow("ZXing (QR codes)", "Apache License 2.0")
                 SettingRow("Material Icons (some island glyph paths)", "Apache License 2.0")
                 SettingRow("Everything else", "Original work in this repository")
             }

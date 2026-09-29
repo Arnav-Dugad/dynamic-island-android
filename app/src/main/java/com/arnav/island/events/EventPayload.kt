@@ -23,6 +23,15 @@ data class MediaPayload(
     val canSeek: Boolean,
     val accent: Int,
     val seek: SeekAction? = null,
+    /** Next item in the player's queue, when the player publishes one. */
+    val upNextTitle: String? = null,
+    val upNextSubtitle: String? = null,
+    /** 0..1 media volume (stream volume, or the remote volume for cast sessions). */
+    val volume: Float? = null,
+    val setVolume: SeekAction? = null,
+    /** Where audio is playing, e.g. "Galaxy Buds2 Pro" or "Phone speaker". */
+    val outputName: String? = null,
+    val outputKind: OutputKind = OutputKind.SPEAKER,
 ) : EventPayload {
     /** Extrapolates the playback position to [nowElapsed] like the system media controls do. */
     fun positionAt(nowElapsed: Long): Long {
@@ -31,6 +40,8 @@ data class MediaPayload(
         return if (durationMs > 0) advanced.coerceIn(0, durationMs) else advanced.coerceAtLeast(0)
     }
 }
+
+enum class OutputKind { SPEAKER, HEADPHONES, BLUETOOTH, CAST, OTHER }
 
 enum class PlugType { NONE, AC, USB, WIRELESS, DOCK, UNKNOWN }
 
@@ -54,7 +65,11 @@ data class ChargingPayload(
     val theme: ChargingTheme,
     /** Level shown at the start of the entrance so the counter animates to the real value. */
     val countFrom: Int,
-) : EventPayload
+    /** Charging power measured from public current x voltage readings, oldest first (W). */
+    val powerHistory: List<Float> = emptyList(),
+) : EventPayload {
+    val watts: Float? get() = powerHistory.lastOrNull()
+}
 
 enum class BatteryAlert { LOW, FULL, SAVER_ON, SAVER_OFF }
 
@@ -145,6 +160,11 @@ data class NotificationPayload(
     val postedAt: Long,
     val hasLargeIcon: Boolean,
     val isConversation: Boolean,
+    /** Distinct recent senders in a group conversation (for stacked avatars). */
+    val senderAvatars: List<ImageRef> = emptyList(),
+    val senderCount: Int = 0,
+    /** Label of the app's own reply action when it offers free-form replies. */
+    val replyLabel: String? = null,
 ) : EventPayload
 
 enum class SystemKind {
@@ -168,3 +188,16 @@ data class MonitorPayload(
 ) : EventPayload
 
 data class CustomPayload(val appLabel: String, val packageName: String?) : EventPayload
+
+/** "Glance" card for a long-press on the idle island. Every value is read from Android. */
+data class GlancePayload(
+    val batteryLevel: Int?,
+    val isCharging: Boolean,
+    /** Wall-clock time of the next alarm (AlarmManager.getNextAlarmClock), if any. */
+    val nextAlarmAt: Long?,
+    val runningTimers: Int,
+    val nowPlaying: String?,
+) : EventPayload
+
+/** Every running activity, shown as a stack of cards. */
+data class StackPayload(val items: List<IslandEvent>) : EventPayload

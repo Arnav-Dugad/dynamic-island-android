@@ -2,15 +2,21 @@ package com.arnav.island.events.media
 
 import android.content.ComponentName
 import android.content.Context
+import android.database.ContentObserver
 import android.graphics.Bitmap
+import android.media.AudioDeviceCallback
+import android.media.AudioDeviceInfo
+import android.media.AudioManager
 import android.media.MediaMetadata
 import android.media.session.MediaController
 import android.media.session.MediaSession
 import android.media.session.MediaSessionManager
+import android.media.VolumeProvider
 import android.media.session.PlaybackState
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
+import android.provider.Settings
 import android.util.Log
 import android.util.LruCache
 import android.util.Size
@@ -23,6 +29,7 @@ import com.arnav.island.events.IslandAction
 import com.arnav.island.events.IslandEvent
 import com.arnav.island.events.EventColors
 import com.arnav.island.events.MediaPayload
+import com.arnav.island.events.OutputKind
 import com.arnav.island.events.SeekAction
 import com.arnav.island.events.notification.IslandNotificationListener
 import com.arnav.island.island.render.presenters.MediaPresenter
@@ -36,6 +43,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.math.roundToInt
 
 /**
  * Follows Android media sessions (any MediaSession-compatible player). Requires notification
@@ -57,6 +65,18 @@ class MediaSessionMonitor(
     private val accents = LruCache<String, Int>(32)
     private val loadingArt = HashSet<String>()
     private var started = false
+    private val audio = context.getSystemService(AudioManager::class.java)
+
+    /** Volume keys, the system slider or another app changed the volume. */
+    private val volumeObserver = object : ContentObserver(handler) {
+        override fun onChange(selfChange: Boolean) = recompute()
+    }
+
+    /** Headphones or a Bluetooth device connected or disconnected. */
+    private val deviceCallback = object : AudioDeviceCallback() {
+        override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>?) = recompute()
+        override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>?) = recompute()
+    }
 
     /** Package of the session currently shown, for the debug HUD. */
     var activePackage: String? = null
@@ -71,6 +91,10 @@ class MediaSessionMonitor(
         }
 
         override fun onMetadataChanged(metadata: MediaMetadata?) = recompute()
+
+        override fun onQueueChanged(queue: MutableList<MediaSession.QueueItem>?) = recompute()
+
+        override fun onAudioInfoChanged(info: MediaController.PlaybackInfo) = recompute()
 
         override fun onSessionDestroyed() {
             untrack(controller.sessionToken)
@@ -89,6 +113,8 @@ class MediaSessionMonitor(
             manager.addOnActiveSessionsChangedListener(sessionsListener, component, handler)
             sync(manager.getActiveSessions(component))
             started = true
+            context.contentResolver.registerContentObserver(Settings.System.CONTENT_URI, true, volumeObserver)
+            audio.registerAudioDeviceCallback(deviceCallback, handler)
             recompute()
         } catch (e: SecurityException) {
             // Notification access not granted yet; the listener service calls refresh() later.
@@ -102,6 +128,8 @@ class MediaSessionMonitor(
                 manager.removeOnActiveSessionsChangedListener(sessionsListener)
             } catch (_: RuntimeException) {
             }
+            context.contentResolver.unregisterContentObserver(volumeObserver)
+            audio.unregisterAudioDeviceCallback(deviceCallback)
         }
         tracked.keys.toList().forEach(::untrack)
         started = false
@@ -198,6 +226,17 @@ class MediaSessionMonitor(
             if (!Launch.send(context, controller.sessionActivity)) Launch.openApp(context, pkg)
         }
 
+        // Up next: only when the player publishes its queue and marks what is playing.
+        val upNext = nextQueueItem(controller, state)
+        val upNextAction = upNext?.let { item ->
+            IslandAction(MediaPresenter.ACTION_UP_NEXT, "Play next") {
+                if (actions and PlaybackState.ACTION_SKIP_TO_QUEUE_ITEM != 0L) transport.skipToQueueItem(item.queueId)
+                else transport.skipToNext()
+            }
+        }
+        val volume = volumeOf(controller)
+        val output = currentOutput(controller)
+
         engine.post(
             IslandEvent(
                 id = ID,
@@ -211,7 +250,7 @@ class MediaSessionMonitor(
                 icon = Glyph.MUSIC,
                 iconImage = if (images.contains(iconKey)) ImageRef(iconKey) else null,
                 artwork = artRef,
-                actions = eventActions,
+                actions = eventActions + listOfNotNull(upNextAction),
                 colors = EventColors(accent = accent),
                 contentKey = "$pkg|$title|$artist",
                 tapAction = open,
@@ -231,6 +270,12 @@ class MediaSessionMonitor(
                     canSeek = actions and PlaybackState.ACTION_SEEK_TO != 0L,
                     accent = accent,
                     seek = SeekAction { fraction -> if (duration > 0) transport.seekTo((fraction * duration).toLong()) },
+                    upNextTitle = upNext?.description?.title?.toString()?.takeIf { it.isNotBlank() },
+                    upNextSubtitle = upNext?.description?.subtitle?.toString()?.takeIf { it.isNotBlank() },
+                    volume = volume?.first,
+                    setVolume = volume?.second,
+                    outputName = output.first,
+                    outputKind = output.second,
                 ),
             )
         )
@@ -280,6 +325,64 @@ class MediaSessionMonitor(
     }
 
     private fun MediaMetadata.text(key: String): String? = getString(key)?.takeIf { it.isNotBlank() }
+
+    private fun nextQueueItem(controller: MediaController, state: PlaybackState?): MediaSession.QueueItem? {
+        val activeId = state?.activeQueueItemId ?: return null
+        if (activeId == MediaSession.QueueItem.UNKNOWN_ID.toLong()) return null
+        val queue = try {
+            controller.queue
+        } catch (_: RuntimeException) {
+            null
+        } ?: return null
+        val index = queue.indexOfFirst { it.queueId == activeId }
+        return if (index >= 0) queue.getOrNull(index + 1) else null
+    }
+
+    /**
+     * Current volume (0..1) and a setter. Local playback uses the media stream, like the volume
+     * keys; cast sessions use the remote device's own volume when it can be changed.
+     */
+    private fun volumeOf(controller: MediaController): Pair<Float, SeekAction>? {
+        val info = controller.playbackInfo
+        if (info.playbackType == MediaController.PlaybackInfo.PLAYBACK_TYPE_REMOTE) {
+            if (info.volumeControl == VolumeProvider.VOLUME_CONTROL_FIXED || info.maxVolume <= 0) return null
+            val max = info.maxVolume
+            return info.currentVolume.toFloat() / max to SeekAction { f -> controller.setVolumeTo((f * max).roundToInt(), 0) }
+        }
+        if (audio.isVolumeFixed) return null
+        val max = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+        if (max <= 0) return null
+        val current = audio.getStreamVolume(AudioManager.STREAM_MUSIC)
+        return current.toFloat() / max to SeekAction { f ->
+            try {
+                audio.setStreamVolume(AudioManager.STREAM_MUSIC, (f * max).roundToInt(), 0)
+            } catch (_: SecurityException) {
+                // Do Not Disturb can block volume changes; the slider snaps back on the next update.
+            }
+        }
+    }
+
+    /**
+     * Where media is playing. Android routes media to the most recently connected headset or
+     * Bluetooth device, so the output is the highest-priority connected device.
+     */
+    private fun currentOutput(controller: MediaController): Pair<String?, OutputKind> {
+        if (controller.playbackInfo.playbackType == MediaController.PlaybackInfo.PLAYBACK_TYPE_REMOTE) {
+            return "Casting" to OutputKind.CAST
+        }
+        val devices = audio.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
+        fun pick(vararg types: Int) = devices.firstOrNull { it.type in types }
+        pick(AudioDeviceInfo.TYPE_BLE_HEADSET, AudioDeviceInfo.TYPE_BLE_SPEAKER, AudioDeviceInfo.TYPE_BLUETOOTH_A2DP)?.let {
+            return it.productName?.toString()?.takeIf { n -> n.isNotBlank() } to OutputKind.BLUETOOTH
+        }
+        pick(AudioDeviceInfo.TYPE_WIRED_HEADSET, AudioDeviceInfo.TYPE_WIRED_HEADPHONES, AudioDeviceInfo.TYPE_USB_HEADSET)?.let {
+            return "Headphones" to OutputKind.HEADPHONES
+        }
+        pick(AudioDeviceInfo.TYPE_HDMI, AudioDeviceInfo.TYPE_USB_DEVICE, AudioDeviceInfo.TYPE_DOCK)?.let {
+            return it.productName?.toString()?.takeIf { n -> n.isNotBlank() } to OutputKind.OTHER
+        }
+        return "This phone" to OutputKind.SPEAKER
+    }
 
     companion object {
         const val ID = "media"

@@ -34,11 +34,13 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Crop169
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.NewReleases
 import androidx.compose.material.icons.rounded.Layers
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.NotificationsOff
 import androidx.compose.material.icons.rounded.Palette
+import androidx.compose.material.icons.rounded.QrCode2
 import androidx.compose.material.icons.rounded.Science
 import androidx.compose.material.icons.rounded.Shield
 import androidx.compose.material.icons.rounded.Speed
@@ -65,6 +67,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.arnav.island.BuildConfig
 import com.arnav.island.overlay.IslandOverlayService
 import com.arnav.island.permissions.PermissionSnapshot
 import com.arnav.island.permissions.Permissions
@@ -125,7 +128,7 @@ fun HomeScreen(settings: IslandSettings, permissions: PermissionSnapshot, ui: Ui
                 demo = false
                 val p = preview ?: return@DemoChips
                 when (pick) {
-                    "Music" -> p.tests.music(true)
+                    "Music" -> p.tests.music(true, rich = false)
                     "Charging" -> p.tests.charging(settings.chargingTheme)
                     "Timer" -> p.tests.timer(5)
                     "Notification" -> p.tests.notification()
@@ -159,7 +162,9 @@ fun HomeScreen(settings: IslandSettings, permissions: PermissionSnapshot, ui: Ui
                 )
             }
         }
-        if (!permissions.notificationAccess) {
+        if (BuildConfig.LITE) {
+            item { LiteCard(ui) }
+        } else if (!permissions.notificationAccess) {
             item {
                 InfoCard(
                     title = "Unlock media, calls and notifications",
@@ -200,7 +205,9 @@ fun HomeScreen(settings: IslandSettings, permissions: PermissionSnapshot, ui: Ui
                 NavRow("Privacy", "Everything stays on this device", Icons.Rounded.Shield, BadgeColors.Green) { ui.go(Dest.PRIVACY) }
                 NavRow("Advanced", "Debug HUD, local API, monitor", Icons.Rounded.Tune, BadgeColors.Graphite) { ui.go(Dest.ADVANCED) }
                 NavRow("Developer tools", "Fire test events on the real island", Icons.Rounded.Science, BadgeColors.Violet) { ui.go(Dest.DEVELOPER) }
-                NavRow("About", "Version, device, limitations", Icons.Rounded.Info, BadgeColors.Graphite) { ui.go(Dest.ABOUT) }
+                NavRow("What's new", "Version ${BuildConfig.VERSION_NAME.substringBefore('-')} · play every new feature", Icons.Rounded.NewReleases, BadgeColors.Pink) { ui.go(Dest.WHATS_NEW) }
+                NavRow("Share with friends", "QR code and install guide", Icons.Rounded.QrCode2, BadgeColors.Violet) { ui.go(Dest.SHARE) }
+                NavRow("About", "Version, updates, device, limitations", Icons.Rounded.Info, BadgeColors.Graphite) { ui.go(Dest.ABOUT) }
             }
         }
         item { Spacer(Modifier.windowInsetsPadding(WindowInsets.navigationBars)) }

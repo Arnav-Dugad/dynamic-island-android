@@ -54,6 +54,14 @@ data class RenderSettings(
     val calibrationGuides: Boolean = false,
     val swipeToDismiss: Boolean = true,
     val swipeDownExpands: Boolean = true,
+    /** 0..2 multiplier for expressive motion (squash and stretch, speed-reactive corners). */
+    val motionIntensity: Float = 1f,
+    val squashStretch: Boolean = true,
+    val iconFlight: Boolean = true,
+    val arrivalPulse: Boolean = true,
+    val lensGlint: Boolean = true,
+    val blurReveal: Boolean = true,
+    val tiltDepth: Boolean = true,
 ) {
     val effectivePerformance: PerformanceMode
         get() = if (performance == PerformanceMode.ADAPTIVE && systemPowerSave) PerformanceMode.BATTERY_SAVER else performance
@@ -103,6 +111,13 @@ class RenderContext(
     var burnInY = 0f
 
     val glyphs = GlyphPainter()
+
+    /** Haptic and sound feedback (null in contexts that should stay silent). */
+    var haptics: IslandHaptics? = null
+    var sounds: IslandSounds? = null
+
+    /** Called when a row of the activity stack is tapped. */
+    var onStackPick: ((String) -> Unit)? = null
 
     fun dp(v: Float): Float = v * density
 

@@ -91,6 +91,10 @@ enum class EventType(val defaultPriority: EventPriority) {
     SCREEN_RECORD(EventPriority.CRITICAL_SYSTEM_EVENT),
     MONITOR(EventPriority.BACKGROUND_ACTIVITY),
     CUSTOM(EventPriority.NOTIFICATION),
+    GLANCE(EventPriority.NOTIFICATION),
+
+    /** Synthetic: the stack of every running activity (never posted by a source). */
+    STACK(EventPriority.BACKGROUND_ACTIVITY),
 }
 
 enum class EntranceAnimation { MORPH, BLOOM, POP, SLIDE }
@@ -111,7 +115,7 @@ enum class Glyph {
     MUSIC, BELL, BELL_OFF, VIBRATE, MOON, BOLT, BATTERY, BLUETOOTH, HEADPHONES, EARBUDS, WATCH,
     SPEAKER, CAR, DEVICE, PHONE, PHONE_DOWN, VIDEO, TIMER, STOPWATCH, NAV_ARROW, DOWNLOAD, CHECK,
     ROTATE_LOCK, ROTATE, HOTSPOT, RECORD, CLIPBOARD, CHIP, PLAY, PAUSE, NEXT, PREVIOUS, PLUS, CLOSE,
-    STOP, FLAG, INFO, WARNING, SPARK, MESSAGE, OPEN,
+    STOP, FLAG, INFO, WARNING, SPARK, MESSAGE, OPEN, REPLY, CALENDAR, ALARM,
 }
 
 enum class ActionStyle { DEFAULT, PRIMARY, POSITIVE, DESTRUCTIVE }

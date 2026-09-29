@@ -2,9 +2,13 @@ package com.arnav.island.settings.ui.screens
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -14,6 +18,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.QueryStats
@@ -28,6 +34,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -37,6 +45,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -150,6 +160,7 @@ private fun AppRow(app: InstalledApp, rule: AppRule, ui: Ui, onClick: () -> Unit
         if (!rule.notifications) add("Notifications off")
         if (rule.priority == 1) add("High priority")
         if (rule.priority == -1) add("Low priority")
+        if (rule.accent != 0) add("Custom colour")
         rule.privacy?.let { add(it.label) }
         if (app.isGame) add("Game")
         if (app.isVideo) add("Video")
@@ -198,6 +209,52 @@ private fun AppRuleSheet(app: InstalledApp, rule: AppRule, ui: Ui, onDismiss: ()
                 { if (it < 1.5f) "Default" else String.format(java.util.Locale.US, "%.1f s", it) })
             SwitchRow("Show message text", rule.showText, { set(rule.copy(showText = it)) })
             ChipsRow(listOf<NotificationPrivacy?>(null) + NotificationPrivacy.entries, rule.privacy, { it?.label ?: "Default" }, { set(rule.copy(privacy = it)) }, title = "Privacy")
+            AccentRow(rule.accent) { set(rule.copy(accent = it)) }
         }
     }
+}
+
+private val AccentChoices = listOf(
+    0xFF4C9BFF, 0xFF2FBF71, 0xFFFF5C9A, 0xFFFF9330, 0xFFF5B82E, 0xFF9B5CFF, 0xFF1FB5A0, 0xFFFF5147,
+).map { it.toInt() }
+
+/** The colour this app's notifications use in the island: Auto takes it from the app icon. */
+@Composable
+private fun AccentRow(accent: Int, onPick: (Int) -> Unit) {
+    Column(Modifier.padding(vertical = 10.dp)) {
+        Text("Accent colour", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(horizontal = 16.dp))
+        Text("Rings the avatar and tints the reply button", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 16.dp))
+        Spacer(Modifier.height(10.dp))
+        Row(
+            Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Swatch(selected = accent == 0, onClick = { onPick(0) }) {
+                Box(
+                    Modifier.fillMaxSize().background(
+                        Brush.sweepGradient(listOf(Color(0xFFFF5C9A), Color(0xFFF5B82E), Color(0xFF2FBF71), Color(0xFF4C9BFF), Color(0xFF9B5CFF), Color(0xFFFF5C9A)))
+                    ),
+                    contentAlignment = Alignment.Center,
+                ) { Text("A", color = Color.White, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold) }
+            }
+            AccentChoices.forEach { c ->
+                Swatch(selected = accent == c, onClick = { onPick(c) }) { Box(Modifier.fillMaxSize().background(Color(c))) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun Swatch(selected: Boolean, onClick: () -> Unit, content: @Composable () -> Unit) {
+    val ring by animateDpAsState(if (selected) 3.dp else 0.dp, spring(dampingRatio = 0.55f), label = "swatch")
+    Box(
+        Modifier
+            .size(40.dp)
+            .clip(CircleShape)
+            .border(ring, MaterialTheme.colorScheme.onSurface, CircleShape)
+            .padding(ring + if (selected) 2.dp else 0.dp)
+            .clip(CircleShape)
+            .clickable(onClick = onClick),
+    ) { content() }
 }

@@ -57,6 +57,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.arnav.island.BuildConfig
 import com.arnav.island.events.ChargingTheme
 import com.arnav.island.events.EventPriority
 import com.arnav.island.events.NotificationPrivacy
@@ -149,6 +150,10 @@ private fun PriorityLadder() {
 @Composable
 private fun NotificationAccessCard(p: PermissionSnapshot, ui: Ui) {
     val context = LocalContext.current
+    if (BuildConfig.LITE) {
+        LiteCard(ui)
+        return
+    }
     if (p.notificationAccess) return
     InfoCard(
         title = "Notification access needed",

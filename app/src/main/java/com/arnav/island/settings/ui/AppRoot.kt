@@ -28,6 +28,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.arnav.island.BuildConfig
 import com.arnav.island.core.AppGraph
 import com.arnav.island.overlay.IslandOverlayService
 import com.arnav.island.permissions.PermissionSnapshot
@@ -46,16 +47,21 @@ import com.arnav.island.settings.ui.screens.EventsScreen
 import com.arnav.island.settings.ui.screens.GesturesScreen
 import com.arnav.island.settings.ui.screens.HomeScreen
 import com.arnav.island.settings.ui.screens.IslandScreen
+import com.arnav.island.settings.ui.screens.IslandStudioScreen
 import com.arnav.island.settings.ui.screens.MediaScreen
 import com.arnav.island.settings.ui.screens.NotificationsScreen
 import com.arnav.island.settings.ui.screens.PerformanceScreen
 import com.arnav.island.settings.ui.screens.PrivacyScreen
+import com.arnav.island.settings.ui.screens.ShareScreen
+import com.arnav.island.settings.ui.screens.StatusBarScreen
 import com.arnav.island.settings.ui.screens.TimersScreen
+import com.arnav.island.settings.ui.screens.WhatsNewScreen
 import com.arnav.island.storage.IslandSettings
 
 enum class Dest {
     HOME, ISLAND, CALIBRATION, EVENTS, APPS, MEDIA, NOTIFICATIONS, BATTERY, CHARGING, BLUETOOTH, TIMERS,
     GESTURES, APPEARANCE, PERFORMANCE, PRIVACY, ADVANCED, DEVELOPER, ABOUT,
+    STUDIO, WHATS_NEW, SHARE, STATUS_BAR,
 }
 
 /** Everything a screen needs besides the settings snapshot. */
@@ -121,7 +127,7 @@ fun IslandRoot(graph: AppGraph, initial: Dest?) {
         return
     }
     if (!settings.onboardingDone) {
-        OnboardingScreen(graph, settings) { graph.settings.set { it.copy(onboardingDone = true) } }
+        OnboardingScreen(graph, settings) { graph.settings.set { it.copy(onboardingDone = true, lastSeenVersion = BuildConfig.VERSION_CODE) } }
         return
     }
 
@@ -129,6 +135,14 @@ fun IslandRoot(graph: AppGraph, initial: Dest?) {
     var forward by remember { mutableStateOf(true) }
     LaunchedEffect(initial) {
         if (initial != null && initial != Dest.HOME) stack = listOf(Dest.HOME, initial)
+    }
+    // After an update, show what's new once.
+    LaunchedEffect(settings.lastSeenVersion) {
+        if (settings.lastSeenVersion < BuildConfig.VERSION_CODE) {
+            graph.settings.set { it.copy(lastSeenVersion = BuildConfig.VERSION_CODE) }
+            forward = true
+            stack = listOf(Dest.HOME, Dest.WHATS_NEW)
+        }
     }
     val ui = remember {
         Ui(
@@ -189,6 +203,10 @@ fun IslandRoot(graph: AppGraph, initial: Dest?) {
             Dest.ADVANCED -> AdvancedScreen(settings, ui)
             Dest.DEVELOPER -> DeveloperScreen(settings, ui)
             Dest.ABOUT -> AboutScreen(ui)
+            Dest.STUDIO -> IslandStudioScreen(settings, ui)
+            Dest.WHATS_NEW -> WhatsNewScreen(settings, ui)
+            Dest.SHARE -> ShareScreen(ui)
+            Dest.STATUS_BAR -> StatusBarScreen(settings, ui)
         }
     }
 }

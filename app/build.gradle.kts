@@ -25,11 +25,31 @@ android {
         @Suppress("OldTargetApi")
         targetSdk = 36
 
-        versionCode = 10000
-        versionName = "1.0.0"
+        versionCode = 10100
+        versionName = "1.1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
+    }
+
+    /*
+     * Two editions share one application id and signing key, so Full installs over Lite.
+     *  - full: everything, including notification access (media, calls, notifications).
+     *  - lite: no NotificationListenerService. Play Protect's enhanced fraud protection blocks
+     *          browser-installed apps that declare one, so Lite is the edition friends can
+     *          install straight from a download link.
+     */
+    flavorDimensions += "edition"
+    productFlavors {
+        create("full") {
+            dimension = "edition"
+            buildConfigField("boolean", "LITE", "false")
+        }
+        create("lite") {
+            dimension = "edition"
+            versionNameSuffix = "-lite"
+            buildConfigField("boolean", "LITE", "true")
+        }
     }
 
     signingConfigs {
@@ -104,6 +124,7 @@ dependencies {
     implementation(libs.androidx.lifecycle.process)
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.zxing.core)
 
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.graphics)

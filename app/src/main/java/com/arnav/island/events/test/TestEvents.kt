@@ -21,12 +21,14 @@ import com.arnav.island.events.EventColors
 import com.arnav.island.events.EventEngine
 import com.arnav.island.events.EventSource
 import com.arnav.island.events.EventType
+import com.arnav.island.events.GlancePayload
 import com.arnav.island.events.Glyph
 import com.arnav.island.events.IslandAction
 import com.arnav.island.events.IslandEvent
 import com.arnav.island.events.MediaPayload
 import com.arnav.island.events.NotificationPayload
 import com.arnav.island.events.NotificationPrivacy
+import com.arnav.island.events.OutputKind
 import com.arnav.island.events.PlugType
 import com.arnav.island.events.ProgressPayload
 import com.arnav.island.events.SeekAction
@@ -57,13 +59,20 @@ class TestEvents(private val engine: EventEngine, private val images: ImageStore
     private val artAccent: Int by lazy { ColorExtractor.accentFrom(Bitmaps.samplePixels(artwork)) }
     private var mediaPlaying = true
     private var mediaStartedAt = 0L
+    private var mediaTrack = 1
+    private var mediaVolume = 0.6f
+    private var mediaRich = true
 
-    fun music(playing: Boolean = true) {
+    /** [rich] adds up next, output and volume to the card (small previews leave them out). */
+    fun music(playing: Boolean = true, rich: Boolean = true) {
         mediaPlaying = playing
+        mediaRich = rich
         if (mediaStartedAt == 0L) mediaStartedAt = SystemClock.elapsedRealtime()
         val art = artwork
         val accent = artAccent
         val position = (SystemClock.elapsedRealtime() - mediaStartedAt) % DURATION
+        val title = "Test Track $mediaTrack"
+        val restart = { mediaStartedAt = SystemClock.elapsedRealtime() }
         engine.post(
             IslandEvent(
                 id = "test:media",
@@ -71,21 +80,22 @@ class TestEvents(private val engine: EventEngine, private val images: ImageStore
                 type = EventType.MEDIA,
                 timestamp = System.currentTimeMillis(),
                 persistent = true,
-                title = "Test Track",
+                title = title,
                 subtitle = "Island Preview",
                 icon = Glyph.MUSIC,
                 artwork = images.put(ART_KEY, art),
                 actions = listOf(
-                    IslandAction(MediaPresenter.ACTION_PREV, "Previous", Glyph.PREVIOUS) { mediaStartedAt = SystemClock.elapsedRealtime(); music(mediaPlaying) },
-                    IslandAction(MediaPresenter.ACTION_TOGGLE, if (playing) "Pause" else "Play") { music(!mediaPlaying) },
-                    IslandAction(MediaPresenter.ACTION_NEXT, "Next", Glyph.NEXT) { mediaStartedAt = SystemClock.elapsedRealtime(); music(mediaPlaying) },
+                    IslandAction(MediaPresenter.ACTION_PREV, "Previous", Glyph.PREVIOUS) { restart(); mediaTrack = (mediaTrack - 1).coerceAtLeast(1); music(mediaPlaying, mediaRich) },
+                    IslandAction(MediaPresenter.ACTION_TOGGLE, if (playing) "Pause" else "Play") { music(!mediaPlaying, mediaRich) },
+                    IslandAction(MediaPresenter.ACTION_NEXT, "Next", Glyph.NEXT) { restart(); mediaTrack++; music(mediaPlaying, mediaRich) },
+                    IslandAction(MediaPresenter.ACTION_UP_NEXT, "Play next") { restart(); mediaTrack++; music(mediaPlaying, mediaRich) },
                 ),
                 colors = EventColors(accent = accent),
-                contentKey = "test-track",
+                contentKey = "test-track-$mediaTrack",
                 payload = MediaPayload(
                     packageName = "test",
                     appLabel = "Test",
-                    title = "Test Track",
+                    title = title,
                     artist = "Island Preview",
                     album = "",
                     durationMs = DURATION,
@@ -97,7 +107,13 @@ class TestEvents(private val engine: EventEngine, private val images: ImageStore
                     canSkipPrevious = true,
                     canSeek = true,
                     accent = accent,
-                    seek = SeekAction { f -> mediaStartedAt = SystemClock.elapsedRealtime() - (f * DURATION).toLong(); music(mediaPlaying) },
+                    seek = SeekAction { f -> mediaStartedAt = SystemClock.elapsedRealtime() - (f * DURATION).toLong(); music(mediaPlaying, mediaRich) },
+                    upNextTitle = "Test Track ${mediaTrack + 1}".takeIf { mediaRich },
+                    upNextSubtitle = "Island Preview".takeIf { mediaRich },
+                    volume = mediaVolume.takeIf { mediaRich },
+                    setVolume = SeekAction { f -> mediaVolume = f; music(mediaPlaying, mediaRich) }.takeIf { mediaRich },
+                    outputName = "Test Earbuds".takeIf { mediaRich },
+                    outputKind = OutputKind.BLUETOOTH,
                 ),
             )
         )
@@ -132,6 +148,93 @@ class TestEvents(private val engine: EventEngine, private val images: ImageStore
             mergeKey = "test:notification",
             actions = listOf(IslandAction("notif.action.0", "Mark done", collapses = true) {}),
             payload = NotificationPayload("test", "Island", "Test notification", "This is how incoming notifications appear. Long-press to expand, swipe sideways to dismiss.", emptyList(), NotificationPrivacy.FULL, true, System.currentTimeMillis(), false, false),
+        )
+    )
+
+    /**
+     * A test group conversation: stacked monogram avatars for three test senders and, when
+     * [reply] is given, the quick-reply pill.
+     */
+    fun groupChat(reply: IslandAction? = null) {
+        val senders = listOf("Test Avery", "Test Blake", "Test Casey")
+        val avatars = senders.mapIndexed { i, name -> images.put("test:sender:$i", Bitmaps.monogram(name.removePrefix("Test "), 96)) }
+        val text = "Test Blake: Group chats show who is talking"
+        engine.post(
+            IslandEvent(
+                id = "test:group",
+                source = EventSource.TEST,
+                type = EventType.NOTIFICATION,
+                timestamp = System.currentTimeMillis(),
+                persistent = false,
+                durationMs = 5_000,
+                title = "Test group",
+                subtitle = text,
+                icon = Glyph.MESSAGE,
+                actions = listOfNotNull(reply),
+                colors = EventColors(accent = 0xFF2FBF71.toInt()),
+                payload = NotificationPayload(
+                    "test", "Island", "Test group", text, listOf("Test Avery: Stacked avatars, newest in front", "Test Casey: Try the reply pill"),
+                    NotificationPrivacy.FULL, true, System.currentTimeMillis(), false, true,
+                    senderAvatars = avatars, senderCount = senders.size, replyLabel = reply?.label,
+                ),
+            )
+        )
+    }
+
+    /** A test timer twelve seconds from done, to show the final countdown. */
+    fun finalCountdown() {
+        val now = System.currentTimeMillis()
+        engine.post(
+            IslandEvent(
+                id = "test:timer",
+                source = EventSource.TEST,
+                type = EventType.TIMER,
+                timestamp = now,
+                persistent = true,
+                title = "Timer",
+                icon = Glyph.TIMER,
+                actions = listOf(IslandAction(TimerPresenter.ACTION_SECONDARY, "Cancel", Glyph.CLOSE, collapses = true) { engine.remove("test:timer") }),
+                payload = TimerPayload(1, "Test", 60_000L, now + 12_000L, 12_000L, isPaused = false, isRinging = false, ringingSince = 0),
+            )
+        )
+        scope.launch {
+            delay(12_600)
+            engine.remove("test:timer")
+        }
+    }
+
+    /** Charging with a test power history, so the live graph has something to draw. */
+    fun chargingGraph(theme: ChargingTheme = ChargingTheme.MINIMAL) = engine.post(
+        IslandEvent(
+            id = "test:charging",
+            source = EventSource.TEST,
+            type = EventType.CHARGING,
+            timestamp = System.currentTimeMillis(),
+            persistent = true,
+            title = "Charging (test)",
+            icon = Glyph.BOLT,
+            animation = EntranceAnimation.POP,
+            payload = ChargingPayload(
+                72, PlugType.AC, isCharging = true, isFull = false, speed = null, temperatureC = null, voltageMv = null,
+                timeToFullMs = null, theme = theme, countFrom = 72,
+                powerHistory = listOf(4f, 9f, 17f, 21f, 22.5f, 22f, 21f, 19f, 18.5f, 16f, 14f, 12.5f, 11f, 10f),
+            ),
+        )
+    )
+
+    /** Glance with a payload the caller builds from real device state. */
+    fun glance(payload: GlancePayload) = engine.post(
+        IslandEvent(
+            id = "test:glance",
+            source = EventSource.TEST,
+            type = EventType.GLANCE,
+            timestamp = System.currentTimeMillis(),
+            persistent = false,
+            durationMs = 4_500,
+            title = "Glance",
+            icon = Glyph.CALENDAR,
+            animation = EntranceAnimation.BLOOM,
+            payload = payload,
         )
     )
 

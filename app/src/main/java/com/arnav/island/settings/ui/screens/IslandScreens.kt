@@ -1,6 +1,15 @@
 package com.arnav.island.settings.ui.screens
 
+import android.graphics.Matrix
+import android.graphics.SweepGradient
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,13 +30,16 @@ import androidx.compose.material.icons.rounded.Gesture
 import androidx.compose.material.icons.rounded.Layers
 import androidx.compose.material.icons.rounded.OpenWith
 import androidx.compose.material.icons.rounded.ScreenRotation
+import androidx.compose.material.icons.rounded.Straighten
 import androidx.compose.material.icons.rounded.Swipe
 import androidx.compose.material.icons.rounded.SwipeDown
+import androidx.compose.material.icons.rounded.Today
 import androidx.compose.material.icons.rounded.Vibration
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
@@ -35,6 +47,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shader
+import androidx.compose.ui.graphics.ShaderBrush
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
@@ -59,6 +73,8 @@ import com.arnav.island.storage.IslandTheme
 import com.arnav.island.storage.PerformanceMode
 import com.arnav.island.storage.TapAction
 import java.util.Locale
+import kotlin.math.PI
+import kotlin.math.sin
 
 private fun autoLabel(v: Float, unit: String = "dp") = if (v <= 0f) "Auto" else String.format(Locale.US, "%.0f %s", v, unit)
 
@@ -84,10 +100,12 @@ fun IslandScreen(s: IslandSettings, ui: Ui) {
                     subtitle = "100% makes cards concentric with your display corners")
                 SliderRow("Touch area below island", s.touchExtensionDp, 0f..32f, { v -> ui.update { it.copy(touchExtensionDp = v) } }, { autoLabel(it).replace("Auto", "0 dp") },
                     subtitle = "The status bar owns touches beside the camera; this adds a touchable strip just below the pill")
+                NavRow("Island Studio", "Drag the edges and watch the real island follow", Icons.Rounded.Straighten, BadgeColors.Cyan) { ui.go(Dest.STUDIO) }
             }
         }
         item {
             Group(title = "Motion") {
+                MotionLab(s)
                 ChipsRow(MotionPreset.entries, s.motionPreset, { it.label }, { v ->
                     ui.update {
                         if (v == MotionPreset.CUSTOM) it.copy(motionPreset = v)
@@ -104,6 +122,7 @@ fun IslandScreen(s: IslandSettings, ui: Ui) {
                     subtitle = "1.0 means no overshoot")
             }
         }
+        item { MotionDetailsGroup(s, ui) }
         item {
             Group(title = "Behaviour") {
                 SwitchRow("Split island", s.splitEnabled, { v -> ui.update { it.copy(splitEnabled = v) } }, "Show two live activities side by side", Icons.Rounded.Layers, BadgeColors.Indigo)
@@ -125,12 +144,13 @@ fun GesturesScreen(s: IslandSettings, ui: Ui) {
             Group(title = "Tap") {
                 SegmentedRow(TapAction.entries, s.tapAction, { it.label }, { v -> ui.update { it.copy(tapAction = v) } },
                     title = "Tap the island", subtitle = "Long-press always expands")
+                SwitchRow("Glance", s.glanceEnabled, { v -> ui.update { it.copy(glanceEnabled = v) } }, "Long-press the empty island for the date, battery, next alarm and what's playing", Icons.Rounded.Today, BadgeColors.Cyan)
             }
         }
         item {
             Group(title = "Swipes") {
-                SwitchRow("Swipe down to expand", s.swipeDownExpands, { v -> ui.update { it.copy(swipeDownExpands = v) } }, null, Icons.Rounded.SwipeDown, BadgeColors.Blue)
-                SwitchRow("Swipe to dismiss", s.swipeToDismiss, { v -> ui.update { it.copy(swipeToDismiss = v) } }, "Sideways or up dismisses temporary events; notifications are cleared where Android allows", Icons.Rounded.Swipe, BadgeColors.Indigo)
+                SwitchRow("Swipe down to expand", s.swipeDownExpands, { v -> ui.update { it.copy(swipeDownExpands = v) } }, "Keep pulling to peek at every running activity", Icons.Rounded.SwipeDown, BadgeColors.Blue)
+                SwitchRow("Swipe to dismiss", s.swipeToDismiss, { v -> ui.update { it.copy(swipeToDismiss = v) } }, "Fling sideways to throw a banner away, or swipe up; notifications are cleared where Android allows", Icons.Rounded.Swipe, BadgeColors.Indigo)
             }
         }
         item {
@@ -194,34 +214,55 @@ private fun ThemeOption(theme: IslandTheme, selected: Boolean, onClick: () -> Un
     }
 }
 
+private val RgbRim = intArrayOf(0xFFFF4D6D.toInt(), 0xFFFFB84D.toInt(), 0xFF4DFF88.toInt(), 0xFF4DD2FF.toInt(), 0xFF7B4DFF.toInt(), 0xFFFF4D6D.toInt())
+
+/** A sweep gradient turned by [degrees] around [center], for the RGB rim. */
+private class RotatingSweep(private val colors: IntArray, private val degrees: Float, private val center: Offset) : ShaderBrush() {
+    override fun createShader(size: Size): Shader =
+        SweepGradient(center.x, center.y, colors, null).apply { setLocalMatrix(Matrix().apply { setRotate(degrees, center.x, center.y) }) }
+}
+
+/**
+ * A tiny living island per theme: the equalizer dances, glass catches a moving highlight and the
+ * RGB rim turns, so each option previews its motion as well as its colours.
+ */
 @Composable
 private fun ThemeSwatch(theme: IslandTheme, selected: Boolean) {
     val ring = if (selected) MaterialTheme.colorScheme.primary else Color.Transparent
+    val clock = rememberInfiniteTransition(label = "swatch")
+    val t by clock.animateFloat(0f, 1f, infiniteRepeatable(tween(2_400, easing = LinearEasing)), label = "t")
+    val width by animateFloatAsState(if (selected) 1f else 0.82f, spring(dampingRatio = 0.55f, stiffness = 380f), label = "w")
     Surface(shape = RoundedCornerShape(16.dp), color = Color(0xFF2A2F55), border = BorderStroke(2.dp, ring), modifier = Modifier.size(width = 76.dp, height = 44.dp)) {
         Box(contentAlignment = Alignment.Center) {
             Canvas(Modifier.size(width = 54.dp, height = 18.dp)) {
+                val w = size.width * width
+                val left = (size.width - w) / 2f
                 val r = CornerRadius(size.height / 2, size.height / 2)
+                val shape = Size(w, size.height)
+                val origin = Offset(left, 0f)
                 when (theme) {
                     IslandTheme.GLASS -> {
-                        drawRoundRect(Color(0xE0101114), cornerRadius = r)
-                        drawRoundRect(Brush.verticalGradient(listOf(Color(0x33FFFFFF), Color.Transparent)), cornerRadius = r)
-                        drawRoundRect(Color(0x40FFFFFF), cornerRadius = r, style = Stroke(1.dp.toPx()))
+                        drawRoundRect(Color(0xE0101114), origin, shape, r)
+                        val sweep = left - w * 0.4f + w * 1.8f * t
+                        drawRoundRect(
+                            Brush.linearGradient(listOf(Color.Transparent, Color(0x40FFFFFF), Color.Transparent), Offset(sweep - 14f, 0f), Offset(sweep + 14f, size.height)),
+                            origin, shape, r,
+                        )
+                        drawRoundRect(Color(0x40FFFFFF), origin, shape, r, style = Stroke(1.dp.toPx()))
                     }
                     IslandTheme.RGB -> {
-                        drawRoundRect(Color.Black, cornerRadius = r)
-                        drawRoundRect(
-                            Brush.sweepGradient(listOf(Color(0xFFFF4D6D), Color(0xFFFFB84D), Color(0xFF4DFF88), Color(0xFF4DD2FF), Color(0xFF7B4DFF), Color(0xFFFF4D6D))),
-                            cornerRadius = r, style = Stroke(1.6.dp.toPx()),
-                        )
+                        drawRoundRect(Color.Black, origin, shape, r)
+                        drawRoundRect(RotatingSweep(RgbRim, 360f * t, Offset(size.width / 2f, size.height / 2f)), origin, shape, r, style = Stroke(1.6.dp.toPx()))
                     }
-                    else -> drawRoundRect(Color.Black, cornerRadius = r)
+                    else -> drawRoundRect(Color.Black, origin, shape, r)
                 }
-                drawCircle(Color(0xFF1A1D26), radius = size.height * 0.22f, center = Offset(size.width * 0.68f, size.height / 2))
-                if (theme == IslandTheme.SAMSUNG) drawCircle(Color(0xFF7FB2FF), radius = size.height * 0.2f, center = Offset(size.width * 0.2f, size.height / 2))
+                drawCircle(Color(0xFF1A1D26), radius = size.height * 0.22f, center = Offset(left + w * 0.68f, size.height / 2))
+                if (theme == IslandTheme.SAMSUNG) drawCircle(Color(0xFF7FB2FF), radius = size.height * (0.17f + 0.04f * sin(t * 2f * PI.toFloat())), center = Offset(left + w * 0.2f, size.height / 2))
                 if (theme != IslandTheme.MINIMAL && theme != IslandTheme.SAMSUNG) {
                     for (i in 0..2) {
-                        val h = size.height * (0.28f + 0.14f * i)
-                        drawRoundRect(Color.White, topLeft = Offset(size.width * 0.12f + i * 5.dp.toPx(), (size.height - h) / 2), size = Size(2.5.dp.toPx(), h), cornerRadius = CornerRadius(2f, 2f))
+                        val phase = t * 2f * PI.toFloat() * 2f + i * 1.9f
+                        val h = size.height * (0.3f + 0.22f * (0.5f + 0.5f * sin(phase)))
+                        drawRoundRect(Color.White, topLeft = Offset(left + w * 0.12f + i * 5.dp.toPx(), (size.height - h) / 2), size = Size(2.5.dp.toPx(), h), cornerRadius = CornerRadius(2f, 2f))
                     }
                 }
             }

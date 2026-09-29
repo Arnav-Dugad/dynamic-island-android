@@ -53,6 +53,10 @@ class BatteryMonitor(
     private var last: Snapshot? = null
     private var connectJob: Job? = null
     private var speedJob: Job? = null
+    private var historyJob: Job? = null
+
+    /** Measured charging power since the charger was connected (W), oldest first. */
+    private val powerHistory = ArrayDeque<Float>(HISTORY_POINTS)
     private var speed: ChargingSpeed? = null
     private var lowAnnounced = false
     private var fullAnnounced = false
@@ -62,6 +66,7 @@ class BatteryMonitor(
     /** Latest battery level, for the monitor and HUD. */
     val level: Int? get() = last?.level
     val temperatureC: Float? get() = last?.temperatureC
+    val isCharging: Boolean get() = last?.isCharging == true
 
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(ctx: Context, intent: Intent) {
@@ -85,7 +90,10 @@ class BatteryMonitor(
         val sticky = ContextCompat.registerReceiver(context, receiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
         registered = true
         last = sticky?.let(::parse)
-        if (last?.isPlugged == true) fullAnnounced = last?.isFull == true
+        if (last?.isPlugged == true) {
+            fullAnnounced = last?.isFull == true
+            recordPower()
+        }
     }
 
     fun stop() {
@@ -94,6 +102,8 @@ class BatteryMonitor(
         registered = false
         connectJob?.cancel()
         speedJob?.cancel()
+        historyJob?.cancel()
+        powerHistory.clear()
         engine.remove(ID_TOAST)
         engine.remove(ID_LIVE)
     }
@@ -156,8 +166,10 @@ class BatteryMonitor(
             delay(CONNECT_SETTLE_MS)
             connectJob = null
             speed = null
+            powerHistory.clear()
             postCharging(entrance = true)
             sampleSpeed()
+            recordPower()
         }
     }
 
@@ -165,6 +177,8 @@ class BatteryMonitor(
         connectJob?.cancel()
         connectJob = null
         speedJob?.cancel()
+        historyJob?.cancel()
+        powerHistory.clear()
         speed = null
         fullAnnounced = false
         engine.remove(ID_TOAST)
@@ -191,6 +205,7 @@ class BatteryMonitor(
             timeToFullMs = remaining,
             theme = s.chargingTheme,
             countFrom = if (entrance) max(0, snap.level - COUNT_UP_SPAN) else snap.level,
+            powerHistory = powerHistory.toList(),
         )
     }
 
@@ -280,6 +295,27 @@ class BatteryMonitor(
         }
     }
 
+    /**
+     * Keeps a short rolling record of real charging power for the graph in the expanded card.
+     * Stops on its own when charging pauses or the charger is removed.
+     */
+    private fun recordPower() {
+        historyJob?.cancel()
+        historyJob = scope.launch {
+            while (true) {
+                delay(HISTORY_INTERVAL_MS)
+                val snap = last ?: return@launch
+                if (!snap.isPlugged) return@launch
+                // Charging paused (battery protection, full): record zero, it is what happens.
+                val watts = if (snap.status == BatteryManager.BATTERY_STATUS_CHARGING) measureWatts(snap) ?: continue else 0f
+                if (powerHistory.size == HISTORY_POINTS) powerHistory.removeFirst()
+                powerHistory.addLast(watts)
+                val s = settings()
+                if (s.chargingLiveActivity && s.chargingEnabled) postLive()
+            }
+        }
+    }
+
     private fun measureWatts(snap: Snapshot): Float? {
         val raw = batteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW)
         if (raw == Int.MIN_VALUE || raw == 0) return null
@@ -310,5 +346,7 @@ class BatteryMonitor(
         private const val COUNT_UP_SPAN = 16
         private const val FAST_WATTS = 12f
         private const val SUPER_FAST_WATTS = 22f
+        private const val HISTORY_POINTS = 48
+        private const val HISTORY_INTERVAL_MS = 7_500L
     }
 }

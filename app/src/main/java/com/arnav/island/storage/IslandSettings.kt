@@ -52,6 +52,8 @@ data class AppRule(
     val showText: Boolean = true,
     /** Null = use the global privacy level. */
     val privacy: NotificationPrivacy? = null,
+    /** 0 = automatic (from the app icon), otherwise a fixed ARGB accent. */
+    val accent: Int = 0,
 ) {
     val isDefault: Boolean get() = this == AppRule()
 }
@@ -89,6 +91,15 @@ data class IslandSettings(
     val animationIntensity: Float = 1f,
     val customResponse: Float = 0.44f,
     val customDamping: Float = 0.74f,
+
+    // Motion details
+    val squashStretch: Boolean = true,
+    val iconFlight: Boolean = true,
+    val arrivalPulse: Boolean = true,
+    val lensGlint: Boolean = true,
+    val blurReveal: Boolean = true,
+    val tiltDepth: Boolean = true,
+    val soundEffects: Boolean = false,
 
     // Gestures
     val haptics: Boolean = true,
@@ -153,6 +164,7 @@ data class IslandSettings(
 
     // Multi-activity
     val splitEnabled: Boolean = true,
+    val glanceEnabled: Boolean = true,
 
     // Fullscreen & apps
     val fullscreenMode: FullscreenMode = FullscreenMode.HIDE_IN_GAMES_VIDEOS,
@@ -172,7 +184,20 @@ data class IslandSettings(
     val monitorCpu: Boolean = true,
     val monitorTemperature: Boolean = true,
     val monitorFps: Boolean = false,
+
+    // Experimental status bar cleanup (needs WRITE_SECURE_SETTINGS granted over ADB)
+    val statusBarCleanup: Boolean = false,
+    val statusBarIcons: String = "alarm_clock,volume,zen,rotate",
+    val statusBarBackup: String = BACKUP_NONE,
+
+    /** versionCode whose "What's new" was last shown. */
+    val lastSeenVersion: Int = 0,
 ) {
+    companion object {
+        /** Marks "no original icon_blacklist value was saved yet". */
+        const val BACKUP_NONE = "<none>"
+    }
+
     fun geometryConfig() = GeometryConfig(
         offsetXPx = offsetXPx,
         offsetYPx = offsetYPx,

@@ -150,6 +150,47 @@ class IslandStateMachineTest {
     }
 
     @Test
+    fun `stack shows every activity and needs at least two`() {
+        machine.onVisibility(true)
+        scheduler.post(live("media"))
+        sync()
+        assertNull(machine.showStack())
+        scheduler.post(live("timer", EventType.TIMER))
+        scheduler.post(toast("charging", EventType.CHARGING, at = clock.now))
+        sync()
+        val t = machine.showStack()
+        assertEquals(TransitionKind.EXPAND, t?.kind)
+        val stack = machine.state as IslandState.Stack
+        assertEquals(listOf("charging", "timer", "media"), stack.events.map { it.id })
+    }
+
+    @Test
+    fun `stack to expanded is a swap and collapse returns to compact`() {
+        machine.onVisibility(true)
+        scheduler.post(live("media"))
+        scheduler.post(live("timer", EventType.TIMER))
+        sync()
+        assertEquals(TransitionKind.EXPAND, machine.showStack()?.kind)
+        assertEquals(TransitionKind.SWAP, machine.expand("media")?.kind)
+        assertTrue(machine.state is IslandState.Expanded)
+        machine.showStack()
+        assertEquals(TransitionKind.COLLAPSE, machine.collapse()?.kind)
+        assertTrue(machine.state is IslandState.Split)
+    }
+
+    @Test
+    fun `stack falls back when activities end`() {
+        machine.onVisibility(true)
+        scheduler.post(live("media"))
+        scheduler.post(live("timer", EventType.TIMER))
+        sync()
+        machine.showStack()
+        scheduler.remove("timer")
+        sync()
+        assertTrue(machine.state is IslandState.Compact)
+    }
+
+    @Test
     fun `same state produces no transition`() {
         machine.onVisibility(true)
         assertNull(machine.onVisibility(true))

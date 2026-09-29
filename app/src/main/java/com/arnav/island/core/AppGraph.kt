@@ -7,6 +7,7 @@ import com.arnav.island.events.notification.NotificationProcessor
 import com.arnav.island.events.test.TestEvents
 import com.arnav.island.events.timer.TimerManager
 import com.arnav.island.island.CutoutSource
+import com.arnav.island.overlay.StatusBarCleanup
 import com.arnav.island.storage.IslandSettings
 import com.arnav.island.storage.SettingsRepository
 import com.arnav.island.util.AppInfoCache
@@ -16,6 +17,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
 
 /** Live facts about the running overlay, for the settings UI and the debug HUD. */
 data class RuntimeStatus(
@@ -35,6 +37,10 @@ data class RuntimeStatus(
     val statusBarHeight: Int = 0,
     val foregroundApp: String? = null,
     val deviceProfile: String = "",
+    /** Resolved island sizes (dp), for Island Studio. */
+    val compactWidthDp: Float = 0f,
+    val compactHeightDp: Float = 0f,
+    val expandedWidthDp: Float = 0f,
 )
 
 /**
@@ -62,9 +68,21 @@ class AppGraph(val app: Application) {
 
     /** UI → overlay requests, handled by the running overlay (no-op when it is off). */
     val commands = MutableSharedFlow<IslandCommand>(extraBufferCapacity = 8)
+
+    init {
+        // Status bar cleanup follows the setting whether or not the overlay is running.
+        scope.launch {
+            settings.flow.collect { s ->
+                val next = StatusBarCleanup.sync(app, s) ?: return@collect
+                settings.set { it.copy(statusBarBackup = next.statusBarBackup) }
+            }
+        }
+    }
 }
 
 sealed interface IslandCommand {
     data class Expand(val eventId: String? = null) : IslandCommand
     data object Collapse : IslandCommand
+    data object Glance : IslandCommand
+    data object Stack : IslandCommand
 }

@@ -1,5 +1,6 @@
 package com.arnav.island.island.render
 
+import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.RectF
 import android.os.SystemClock
@@ -69,6 +70,9 @@ abstract class Presenter(protected val rc: RenderContext) {
     /** Non-null while the user scrubs a seek bar (0..1). */
     var scrubFraction: Float? = null
 
+    /** Which SEEK target the current scrub belongs to (a card can have several sliders). */
+    var scrubTargetId: String? = null
+
     val isBound: Boolean get() = ::event.isInitialized
 
     /** Target size (px) for TOAST / EXPANDED. Called before [bind]. */
@@ -115,6 +119,27 @@ abstract class Presenter(protected val rc: RenderContext) {
 
     open val contentDescription: String
         get() = listOf(event.title, event.subtitle).filter { it.isNotBlank() }.joinToString(", ")
+
+    // ---------------------------------------------------------------------------------------------
+    // Shared elements
+    // ---------------------------------------------------------------------------------------------
+
+    /**
+     * The image that can fly between this presenter and another one showing the same event
+     * (album art, avatars). Writes its square rect into [out] in this presenter's coordinates
+     * (see the class contract) for a shape of [w] x [h]. Returns false when there is none.
+     */
+    open fun heroSlot(w: Float, h: Float, out: RectF): Boolean = false
+
+    open val heroBitmap: Bitmap? get() = null
+
+    open fun heroRadius(size: Float): Float = size * 0.26f
+
+    /** Set by the scene while a shared-element flight draws this presenter's hero image. */
+    var heroHidden = false
+
+    /** Colour of the soft glow under the island in this presentation, or 0 for none. */
+    open val glowColor: Int get() = 0
 
     // ---------------------------------------------------------------------------------------------
     // Layout helpers

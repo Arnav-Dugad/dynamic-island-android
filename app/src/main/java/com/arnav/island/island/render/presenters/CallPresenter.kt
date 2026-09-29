@@ -1,7 +1,9 @@
 package com.arnav.island.island.render.presenters
 
+import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
+import android.graphics.RectF
 import com.arnav.island.events.ActionStyle
 import com.arnav.island.events.CallPayload
 import com.arnav.island.events.CallState
@@ -22,6 +24,7 @@ import kotlin.math.sin
 class CallPresenter(rc: RenderContext) : Presenter(rc) {
 
     private val avatar = RoundedImage()
+    private var avatarBitmap: Bitmap? = null
     private var call: CallPayload? = null
     private var nameLine = ""
     private var initials = ""
@@ -37,7 +40,8 @@ class CallPresenter(rc: RenderContext) : Presenter(rc) {
 
     override fun onBind(isUpdate: Boolean) {
         call = event.payload as? CallPayload
-        avatar.set(rc.images.get(event.artwork))
+        avatarBitmap = rc.images.get(event.artwork)
+        avatar.set(avatarBitmap)
         val name = call?.callerName?.ifBlank { null } ?: event.title.ifBlank { "Call" }
         initials = name.split(' ', '-').filter { it.isNotBlank() && it.first().isLetter() }.take(2).joinToString("") { it.first().uppercase() }
         pad = dp(18f)
@@ -91,7 +95,7 @@ class CallPresenter(rc: RenderContext) : Presenter(rc) {
         val inset = (h - s) / 2f
         val cy = h / 2f + rc.burnInY
         if (avatar.hasImage) {
-            avatar.draw(canvas, inset + rc.burnInX, inset + rc.burnInY, s, s / 2f, a)
+            if (!heroHidden) avatar.draw(canvas, inset + rc.burnInX, inset + rc.burnInY, s, s / 2f, a)
         } else {
             rc.glyphs.draw(canvas, Glyph.PHONE, h / 2f + rc.burnInX, cy, s * 0.9f, IslandColors.GREEN, a)
         }
@@ -116,7 +120,7 @@ class CallPresenter(rc: RenderContext) : Presenter(rc) {
         val l = pad
         val t = cy - size / 2f
         if (avatar.hasImage) {
-            avatar.draw(canvas, l, t, size, size / 2f, alpha)
+            if (!heroHidden) avatar.draw(canvas, l, t, size, size / 2f, alpha)
         } else {
             rc.circle(canvas, l + size / 2f, cy, size / 2f, IslandColors.CONTROL, alpha)
             if (initials.isNotEmpty()) {
@@ -150,6 +154,29 @@ class CallPresenter(rc: RenderContext) : Presenter(rc) {
             }
         }
     }
+
+    /** The caller's photo glides between the compact pill and the call card. */
+    override fun heroSlot(w: Float, h: Float, out: RectF): Boolean {
+        if (avatarBitmap == null) return false
+        when (mode) {
+            PresentMode.EXPANDED, PresentMode.TOAST -> {
+                val size = dp(50f)
+                out.set(pad, cy - size / 2f, pad + size, cy + size / 2f)
+            }
+            PresentMode.COMPACT, PresentMode.SPLIT_MAIN -> {
+                if (compactVisibility(w, h) < 0.5f) return false
+                val s = slot(h)
+                val inset = (h - s) / 2f
+                out.set(inset + rc.burnInX, inset + rc.burnInY, inset + rc.burnInX + s, inset + rc.burnInY + s)
+            }
+            else -> return false
+        }
+        return true
+    }
+
+    override val heroBitmap: Bitmap? get() = avatarBitmap
+
+    override fun heroRadius(size: Float): Float = size / 2f
 
     override val contentDescription: String
         get() = if (incoming) "Incoming call from $nameLine" else "Call with $nameLine"

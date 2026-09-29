@@ -1,6 +1,6 @@
 # Manual QA checklist: Galaxy S23+ (SM-S916*)
 
-Run on the release build (`app-release.apk`) with One UI's default display settings
+Run on the release build (`Island-vX.Y.Z.apk`, plus section 14 on `Island-Lite-vX.Y.Z.apk`) with One UI's default display settings
 (FHD+, 120 Hz *Adaptive*), then repeat the ★ items at *Standard* (60 Hz) and with a non-default
 font size. Tick each item; note the One UI version.
 
@@ -87,3 +87,27 @@ font size. Tick each item; note the One UI version.
 ## 12. Accessibility
 - [ ] TalkBack reads the island ("Playing: …") and offers Expand/Collapse/Dismiss/actions.
 - [ ] Settings screens are fully navigable with TalkBack; font size 1.3× keeps layouts intact.
+
+## 13. New in 1.1
+- [ ] Updating from 1.0 keeps settings and opens *What's new* once; every Play button animates the preview.
+- [ ] A real notification's icon flies in from the status bar before the banner opens (Motion details → Icon flight).
+- [ ] Group chat (WhatsApp group): stacked avatars, "N people" caption.
+- [ ] Quick reply: the expanded card shows the reply pill in the app's colour; the sheet opens with the keyboard up; the message arrives in the chat; suggested replies send in one tap.
+- [ ] Media card: up next plays the next item; the output shows the connected earbuds; the volume slider tracks the volume keys both ways.
+- [ ] Album art glides between the pill and the card; the glow matches the artwork.
+- [ ] Timer: the last ten seconds pulse, warm to red and tick once per second; digits roll.
+- [ ] Charging: the expanded card draws the power graph after about 30 s; with *Protect battery* on, it reads "Paused at 85%".
+- [ ] Long-press the empty island: Glance shows today's date, battery and the real next alarm.
+- [ ] Pull an open card further down: stack peek lists every activity; tapping a row opens it.
+- [ ] Fling a banner sideways: it flies off with the swipe's speed.
+- [ ] Island Studio: dragging the handles resizes the real island live; Reset returns to automatic.
+- [ ] Motion lab curves change as the spring sliders move; each Motion details switch takes effect.
+- [ ] Share: the QR code scans to the releases page; Share link and Copy work.
+- [ ] About → Check for updates opens the latest release; Obtainium opens (or its website if not installed).
+- [ ] Status bar cleanup: without the ADB grant the switch is disabled; after the grant the chosen icons disappear, and turning it off restores the previous icons exactly.
+
+## 14. Lite edition
+- [ ] Installs from a browser without the Play Protect block.
+- [ ] Onboarding skips notification access and explains Lite; Home shows the Lite card.
+- [ ] Charging, battery, Bluetooth, timers, system events and Glance all work.
+- [ ] Installing the full APK over Lite keeps every setting.

@@ -62,6 +62,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.arnav.island.BuildConfig
 import com.arnav.island.core.AppGraph
 import com.arnav.island.overlay.GeometryEngine
 import com.arnav.island.overlay.IslandOverlayService
@@ -113,7 +114,13 @@ fun OnboardingScreen(graph: AppGraph, settings: IslandSettings, onFinish: () -> 
                         Button(onClick = { ui.open(Permissions.overlaySettings(context)) }, modifier = Modifier.fillMaxWidth()) { Text("Allow") }
                     }
                 }
-                2 -> Page(
+                2 -> if (BuildConfig.LITE) {
+                    Page(
+                        title = "Island Lite",
+                        body = "This edition leaves out notification access so it installs straight from a browser. Charging, battery, Bluetooth, timers, system events and Glance all work. For music, calls and notifications, install the full edition later: it updates this app and keeps your settings.",
+                        hero = { Hero(Icons.Rounded.Notifications, BadgeColors.Pink) },
+                    )
+                } else Page(
                     title = "Know what's happening",
                     body = "Notification access is how Android shares media sessions, calls, navigation, downloads and alerts. Everything is processed on this phone and nothing is stored. You can skip this and add it later.",
                     hero = { Hero(Icons.Rounded.Notifications, BadgeColors.Pink) },
@@ -174,7 +181,7 @@ fun OnboardingScreen(graph: AppGraph, settings: IslandSettings, onFinish: () -> 
                     hero = { Hero(Icons.Rounded.CheckCircle, BadgeColors.Green) },
                 ) {
                     Status("Island overlay", permissions.overlay && settings.enabled)
-                    Status("Media, calls & notifications", permissions.notificationAccess)
+                    if (!BuildConfig.LITE) Status("Media, calls & notifications", permissions.notificationAccess)
                     Status("Background reliability", permissions.batteryUnrestricted)
                 }
             }

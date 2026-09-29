@@ -5,11 +5,13 @@ import com.arnav.island.island.render.presenters.BluetoothPresenter
 import com.arnav.island.island.render.presenters.CallPresenter
 import com.arnav.island.island.render.presenters.ChargingPresenter
 import com.arnav.island.island.render.presenters.CustomPresenter
+import com.arnav.island.island.render.presenters.GlancePresenter
 import com.arnav.island.island.render.presenters.MediaPresenter
 import com.arnav.island.island.render.presenters.MonitorPresenter
 import com.arnav.island.island.render.presenters.NavigationPresenter
 import com.arnav.island.island.render.presenters.NotificationPresenter
 import com.arnav.island.island.render.presenters.ProgressPresenter
+import com.arnav.island.island.render.presenters.StackPresenter
 import com.arnav.island.island.render.presenters.SystemPresenter
 import com.arnav.island.island.render.presenters.TimerPresenter
 
@@ -27,6 +29,8 @@ object PresenterFactory {
         EventType.SYSTEM, EventType.SCREEN_RECORD -> SystemPresenter(rc)
         EventType.MONITOR -> MonitorPresenter(rc)
         EventType.CUSTOM -> CustomPresenter(rc)
+        EventType.GLANCE -> GlancePresenter(rc)
+        EventType.STACK -> StackPresenter(rc)
     }
 
     /** Presenters are reusable across event types that share a renderer class. */

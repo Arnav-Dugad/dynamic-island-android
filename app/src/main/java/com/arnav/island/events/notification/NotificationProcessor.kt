@@ -34,6 +34,7 @@ import com.arnav.island.events.ProgressPayload
 import com.arnav.island.events.navigation.NavigationRegistry
 import com.arnav.island.island.render.presenters.CallPresenter
 import com.arnav.island.island.render.presenters.NotificationPresenter
+import com.arnav.island.settings.reply.ReplyRequest
 import com.arnav.island.storage.IslandSettings
 import com.arnav.island.util.AppInfoCache
 import com.arnav.island.util.Bitmaps
@@ -177,9 +178,10 @@ class NotificationProcessor(
         val clearable = sbn.isClearable
         val autoCancel = n.flags and Notification.FLAG_AUTO_CANCEL != 0
 
-        val actions = n.actions.orEmpty()
+        val replyWith = replyAction(n)
+        val otherActions = n.actions.orEmpty()
             .filter { it.remoteInputs.isNullOrEmpty() && it.actionIntent != null && !it.title.isNullOrBlank() }
-            .take(3)
+            .take(if (replyWith != null) 2 else 3)
             .mapIndexed { i, action ->
                 IslandAction(NotificationPresenter.ACTION_PREFIX + i, action.title.toString(), collapses = true) {
                     Launch.send(context, action.actionIntent)
@@ -195,6 +197,37 @@ class NotificationProcessor(
             val (largeRef, appRef) = withContext(Dispatchers.Default) {
                 loadLargeIcon(n, content.personIcon, "notif:$key") to loadAppIcon(pkg)
             }
+            val senderRefs = if (content.senders.size >= 2 && privacy == NotificationPrivacy.FULL) {
+                withContext(Dispatchers.Default) { loadSenderAvatars(content.senders, key) }
+            } else {
+                emptyList()
+            }
+            // The user's per-app colour wins, then the app's declared notification colour,
+            // then the colour of its launcher icon.
+            val accent = rule.accent.takeIf { it != 0 }
+                ?: n.color.takeIf { it != 0 && it != Notification.COLOR_DEFAULT }
+                ?: withContext(Dispatchers.Default) { apps.accentBlocking(pkg) }
+
+            // Quick reply reuses the app's own reply action (RemoteInput): the text goes straight
+            // back to the app that asked for it, exactly as the notification shade would send it.
+            val reply = replyWith?.let { action ->
+                val request = ReplyRequest(
+                    key = key,
+                    title = if (privacy == NotificationPrivacy.FULL) content.title.ifBlank { appLabel } else appLabel,
+                    appLabel = appLabel,
+                    packageName = pkg,
+                    message = if (privacy == NotificationPrivacy.FULL && rule.showText) content.text else "",
+                    label = action.title?.toString()?.takeIf { it.isNotBlank() } ?: "Reply",
+                    accent = accent,
+                    action = action,
+                )
+                IslandAction(NotificationPresenter.ACTION_REPLY, request.label, Glyph.REPLY, collapses = true) {
+                    // The conversation moves into the reply sheet; the banner steps aside.
+                    ReplyRequest.launch(context, request)
+                    engine.remove(id)
+                }
+            }
+            val actions = listOfNotNull(reply) + otherActions
             engine.post(
                 IslandEvent(
                     id = id,
@@ -210,7 +243,7 @@ class NotificationProcessor(
                     iconImage = appRef,
                     artwork = largeRef,
                     actions = actions,
-                    colors = EventColors(accent = n.color),
+                    colors = EventColors(accent = accent),
                     mergeKey = "app:$pkg:${content.conversationKey}",
                     contentKey = hash.toString(),
                     tapAction = open,
@@ -227,6 +260,9 @@ class NotificationProcessor(
                         postedAt = sbn.postTime,
                         hasLargeIcon = largeRef != null,
                         isConversation = content.isConversation,
+                        senderAvatars = senderRefs,
+                        senderCount = content.senderCount,
+                        replyLabel = reply?.label,
                     ),
                 )
             )
@@ -240,7 +276,33 @@ class NotificationProcessor(
         val isConversation: Boolean,
         val conversationKey: String,
         val personIcon: Icon?,
+        /** Most recent distinct senders of a group conversation, newest first. */
+        val senders: List<Sender> = emptyList(),
+        val senderCount: Int = 0,
     )
+
+    private class Sender(val name: String, val icon: Icon?)
+
+    /** The app's own free-form reply action, preferring one marked as a reply. */
+    private fun replyAction(n: Notification): Notification.Action? {
+        val candidates = n.actions.orEmpty().filter { a ->
+            a.actionIntent != null && a.remoteInputs.orEmpty().any { it.allowFreeFormInput }
+        }
+        return candidates.firstOrNull { it.semanticAction == Notification.Action.SEMANTIC_ACTION_REPLY } ?: candidates.firstOrNull()
+    }
+
+    private fun loadSenderAvatars(senders: List<Sender>, key: String): List<ImageRef> =
+        senders.take(MAX_SENDERS).mapIndexed { i, sender ->
+            val cacheKey = "sender:$key:$i"
+            val bmp = sender.icon?.let { icon ->
+                try {
+                    icon.loadDrawable(context)?.let { Bitmaps.fromDrawable(it, AVATAR_PX) }
+                } catch (_: Exception) {
+                    null
+                }
+            } ?: Bitmaps.monogram(sender.name, AVATAR_PX)
+            images.put(cacheKey, bmp)
+        }
 
     private fun extractContent(n: Notification): Content {
         val extras = n.extras
@@ -252,6 +314,8 @@ class NotificationProcessor(
         var isConversation = false
         var conversationKey = n.shortcutId.orEmpty()
         var personIcon: Icon? = null
+        var senders = emptyList<Sender>()
+        var senderCount = 0
         val messaging = NotificationCompat.MessagingStyle.extractMessagingStyleFromNotification(n)
         val messages = messaging?.messages.orEmpty()
         if (messaging != null && messages.isNotEmpty()) {
@@ -268,8 +332,16 @@ class NotificationProcessor(
                 extra += if (group && !who.isNullOrBlank()) "$who: ${m.text}" else m.text?.toString().orEmpty()
             }
             personIcon = last.person?.icon?.toIcon(context)
+            if (group) {
+                // Messages with no person are the user's own; everyone else is a sender.
+                val distinct = messages.asReversed()
+                    .mapNotNull { m -> m.person?.takeIf { !it.name.isNullOrBlank() } }
+                    .distinctBy { it.key ?: it.name.toString() }
+                senderCount = distinct.size
+                senders = distinct.take(MAX_SENDERS).map { Sender(it.name.toString(), it.icon?.toIcon(context)) }
+            }
         }
-        return Content(title.trim(), text.trim(), extra.filter { it.isNotBlank() }, isConversation, conversationKey, personIcon)
+        return Content(title.trim(), text.trim(), extra.filter { it.isNotBlank() }, isConversation, conversationKey, personIcon, senders, senderCount)
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -490,6 +562,8 @@ class NotificationProcessor(
 
     companion object {
         private const val ICON_PX = 144
+        private const val AVATAR_PX = 96
+        private const val MAX_SENDERS = 3
 
         // Notification.CALL_TYPE_* (API 31).
         private const val CALL_TYPE_INCOMING = 1

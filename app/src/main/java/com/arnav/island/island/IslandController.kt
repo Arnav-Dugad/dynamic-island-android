@@ -3,9 +3,12 @@ package com.arnav.island.island
 import android.graphics.RectF
 import com.arnav.island.events.EventEngine
 import com.arnav.island.events.EventPriority
+import com.arnav.island.events.EventType
 import com.arnav.island.events.IslandAction
 import com.arnav.island.events.IslandEvent
+import com.arnav.island.island.render.IslandHaptics
 import com.arnav.island.island.render.IslandScene
+import com.arnav.island.island.render.IslandSounds
 import com.arnav.island.island.render.IslandView
 import com.arnav.island.storage.IslandSettings
 import com.arnav.island.storage.TapAction
@@ -38,10 +41,14 @@ class IslandController(
     var onBounds: ((RectF, Boolean) -> Unit)? = null
     var onAnimating: ((Boolean) -> Unit)? = null
 
+    /** Builds the Glance card for a long-press on the idle island (null: feature unavailable). */
+    var glanceProvider: (() -> IslandEvent?)? = null
+
     val state: IslandState get() = machine.state
 
     fun start() {
         view.host = this
+        view.rc.onStackPick = { id -> expand(id) }
         scheduleJob = scope.launch {
             engine.schedule.collect { apply(machine.onSchedule(it)) }
         }
@@ -70,9 +77,30 @@ class IslandController(
     private fun apply(transition: IslandTransition?, immediate: Boolean = false) {
         transition ?: return
         view.render(transition.to, transition.kind, immediate)
+        if (!immediate) playTransitionFeedback(transition)
         updateHold()
         scheduleAutoCollapse()
         onStateChanged?.invoke(transition)
+    }
+
+    /**
+     * Haptics and sounds that belong to a state change rather than a touch: an arrival tick for
+     * island-only moments (notifications already buzz on their own), and the optional sounds.
+     */
+    private fun playTransitionFeedback(t: IslandTransition) {
+        val sounds = view.rc.sounds
+        when (t.kind) {
+            TransitionKind.EXPAND -> sounds?.play(IslandSounds.Sound.EXPAND)
+            TransitionKind.COLLAPSE -> sounds?.play(IslandSounds.Sound.COLLAPSE)
+            TransitionKind.INTERRUPT, TransitionKind.BLOOM -> {
+                val event = (t.to as? IslandState.Toast)?.event ?: return
+                if (event.type != EventType.NOTIFICATION && settings.haptics) {
+                    view.rc.haptics?.play(IslandHaptics.Cue.ARRIVAL, touch = false)
+                }
+                sounds?.play(IslandSounds.Sound.ARRIVAL)
+            }
+            else -> Unit
+        }
     }
 
     /** Toast countdowns pause while touched or while the toast is expanded. */
@@ -84,7 +112,7 @@ class IslandController(
     private fun scheduleAutoCollapse() {
         autoCollapseJob?.cancel()
         val st = machine.state
-        if (st !is IslandState.Expanded || !machine.expandedByUser || settings.autoCollapseSeconds <= 0) return
+        if (!st.isLarge || !machine.expandedByUser || settings.autoCollapseSeconds <= 0) return
         autoCollapseJob = scope.launch {
             delay(settings.autoCollapseSeconds * 1_000L)
             if (!pressed) apply(machine.collapse())
@@ -99,11 +127,26 @@ class IslandController(
 
     fun collapse() = apply(machine.collapse())
 
-    fun dismiss(event: IslandEvent) {
+    /** Glance: date, battery, next alarm, timers and what's playing. */
+    fun showGlance(): Boolean {
+        val glance = glanceProvider?.invoke() ?: return false
+        engine.post(glance)
+        return true
+    }
+
+    fun showStack(): Boolean {
+        val t = machine.showStack() ?: return false
+        apply(t)
+        return true
+    }
+
+    /** Dismisses [event]; with a [throwVelocity] the island is thrown away sideways first. */
+    fun dismiss(event: IslandEvent, throwVelocity: Float? = null) {
         if (!event.dismissible) {
             collapse()
             return
         }
+        if (throwVelocity != null) view.throwAway(throwVelocity)
         event.onDismiss?.invoke?.invoke()
         engine.dismiss(event.id)
         apply(machine.onDismissed(event.id))
@@ -148,8 +191,13 @@ class IslandController(
     }
 
     override fun onLongPress(slot: IslandScene.Slot) {
+        val st = machine.state
+        if (st == IslandState.Idle) {
+            if (settings.glanceEnabled) showGlance()
+            return
+        }
         val event = slotEvent(slot) ?: return
-        if (machine.state is IslandState.Expanded) return
+        if (st.isLarge) return
         expand(event.id)
     }
 
@@ -162,14 +210,23 @@ class IslandController(
         val st = machine.state
         val event = st.focusEvent ?: return
         when (direction) {
-            IslandView.Swipe.DOWN -> if (settings.swipeDownExpands && st !is IslandState.Expanded) expand(event.id)
+            IslandView.Swipe.DOWN -> when {
+                // Pulling down on an open card reveals every running activity.
+                st is IslandState.Expanded -> showStack()
+                settings.swipeDownExpands && !st.isLarge -> expand(event.id)
+            }
+            IslandView.Swipe.DOWN_FAR -> if (!showStack() && settings.swipeDownExpands && !st.isLarge) expand(event.id)
             IslandView.Swipe.UP -> when (st) {
-                is IslandState.Expanded -> collapse()
+                is IslandState.Expanded, is IslandState.Stack -> collapse()
                 is IslandState.Toast -> dismiss(event)
                 else -> if (settings.swipeToDismiss) dismiss(event)
             }
             IslandView.Swipe.LEFT, IslandView.Swipe.RIGHT -> if (settings.swipeToDismiss) {
-                if (st is IslandState.Expanded && !event.isTransient) collapse() else dismiss(event)
+                when {
+                    st is IslandState.Stack -> collapse()
+                    st is IslandState.Expanded && !event.isTransient -> collapse()
+                    else -> dismiss(event, throwVelocity = velocity)
+                }
             }
         }
     }
@@ -181,7 +238,7 @@ class IslandController(
     }
 
     override fun onOutsideTouch() {
-        if (machine.state is IslandState.Expanded) collapse()
+        if (machine.state.isLarge) collapse()
     }
 
     override fun onBoundsChanged(bounds: RectF, settled: Boolean) {

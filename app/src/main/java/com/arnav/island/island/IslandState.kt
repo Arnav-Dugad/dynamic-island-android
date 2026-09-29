@@ -25,14 +25,21 @@ sealed interface IslandState {
     /** The full interaction card for one event. */
     data class Expanded(val event: IslandEvent) : IslandState
 
+    /** Every running activity as a stack of cards (drag further down from expanded). */
+    data class Stack(val events: List<IslandEvent>) : IslandState
+
     val focusEvent: IslandEvent?
         get() = when (this) {
             is Compact -> event
             is Split -> primary
             is Toast -> event
             is Expanded -> event
+            is Stack -> events.firstOrNull()
             else -> null
         }
+
+    /** Large states that fill the width below the status bar. */
+    val isLarge: Boolean get() = this is Expanded || this is Stack
 
     val label: String
         get() = when (this) {
@@ -42,6 +49,7 @@ sealed interface IslandState {
             is Split -> "Split(${primary.id} | ${secondary.id})"
             is Toast -> "Toast(${event.id})"
             is Expanded -> "Expanded(${event.id})"
+            is Stack -> "Stack(${events.size})"
         }
 }
 
@@ -77,10 +85,11 @@ fun classifyTransition(from: IslandState, to: IslandState): TransitionKind {
     return when {
         from is IslandState.Hidden -> TransitionKind.APPEAR
         to is IslandState.Hidden -> TransitionKind.DISAPPEAR
-        from is IslandState.Idle -> if (to is IslandState.Expanded) TransitionKind.EXPAND else TransitionKind.BLOOM
-        to is IslandState.Idle -> if (from is IslandState.Expanded) TransitionKind.COLLAPSE else TransitionKind.RETRACT
-        to is IslandState.Expanded && from !is IslandState.Expanded -> TransitionKind.EXPAND
-        from is IslandState.Expanded && to !is IslandState.Expanded -> TransitionKind.COLLAPSE
+        from is IslandState.Idle -> if (to.isLarge) TransitionKind.EXPAND else TransitionKind.BLOOM
+        to is IslandState.Idle -> if (from.isLarge) TransitionKind.COLLAPSE else TransitionKind.RETRACT
+        from.isLarge && to.isLarge && from::class != to::class -> TransitionKind.SWAP
+        to.isLarge && !from.isLarge -> TransitionKind.EXPAND
+        from.isLarge && !to.isLarge -> TransitionKind.COLLAPSE
         from is IslandState.Compact && to is IslandState.Split -> TransitionKind.SPLIT
         from is IslandState.Split && to is IslandState.Compact -> TransitionKind.MERGE
         to is IslandState.Toast && from !is IslandState.Toast -> TransitionKind.INTERRUPT
