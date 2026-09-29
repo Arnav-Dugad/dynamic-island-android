@@ -21,8 +21,27 @@ interrupted mid-flight and keeps its velocity.
 
 ---
 
+## Download
+
+### [⬇ Download the latest APK](https://github.com/Arnav-Dugad/dynamic-island-android/releases/latest)
+
+Works on **Android 11 or newer**, best on phones with a centred punch-hole camera (tuned for the
+Galaxy S23+; other phones can calibrate it).
+
+1. On your phone, open the link above and download `Island-vX.Y.Z.apk` from **Assets**.
+2. Open the file. If asked, allow your browser or Files app to **install unknown apps**.
+3. Play Protect may say the developer is unrecognised, because the app is not on the Play Store.
+   Choose **Install anyway**. The app has no internet permission, so it cannot send data anywhere.
+4. Open **Island** and follow the short setup. If notification access is greyed out, go to
+   *Settings → Apps → Island → ⋮ → Allow restricted settings* and try again.
+
+Updating: install the newer APK over the old one; your settings are kept.
+
+---
+
 ## Contents
 
+- [Download](#download)
 - [Features](#features)
 - [Build and install](#build-and-install)
 - [First run: permissions](#first-run-permissions)
