@@ -68,7 +68,7 @@ jobs:
           } > keystore.properties
 
       - name: Test and build
-        run: ./gradlew --no-daemon testFullDebugUnitTest assembleFullRelease assembleLiteRelease
+        run: bash ./gradlew --no-daemon testFullDebugUnitTest assembleFullRelease assembleLiteRelease
 
       - name: Verify signatures
         run: |

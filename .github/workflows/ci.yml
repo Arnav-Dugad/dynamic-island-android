@@ -31,4 +31,4 @@ jobs:
         run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-37.0" "build-tools;36.0.0" > /dev/null
 
       - name: Test and build
-        run: ./gradlew --no-daemon testFullDebugUnitTest assembleFullDebug assembleLiteDebug
+        run: bash ./gradlew --no-daemon testFullDebugUnitTest assembleFullDebug assembleLiteDebug
